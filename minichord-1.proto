@@ -1,0 +1,88 @@
+// protoc --proto_path=. --go_out=. --go_opt=paths=source_relative minichord.proto
+syntax = "proto3";
+package minichord;
+
+option go_package="minichord/proto";
+
+message Registration {
+    // Address of the peer that registers, must be acceptable by func Dial.
+    string Address = 1; 
+}
+
+message RegistrationResponse {
+    sfixed32 Result = 1;
+    string Info = 2;
+}
+
+// Generic message representing a node containing its ID and address.
+message Node {
+    sfixed32 Id = 1;
+    string Address = 2;
+}
+
+message Deregistration {
+    Node node = 1;
+}
+
+message DeregistrationResponse {
+    sfixed32 Result = 1;
+    string Info = 2;
+}
+
+message NodeRegistry {
+	fixed32 NR = 1;
+	repeated Node Peers = 2;
+	fixed32 NoIds = 3;
+	repeated sfixed32 Ids = 4;
+}
+
+message NodeRegistryResponse {
+    fixed32 Result = 1;
+    string Info = 2;
+}
+
+message InitiateTask {
+	fixed32 Packets = 1;
+}
+
+message NodeData {
+	sfixed32 Destination = 1;
+	sfixed32 Source = 2;
+	sfixed32 Payload = 3;
+	fixed32 Hops = 4;
+	repeated sfixed32 Trace = 5;
+}
+
+message TaskFinished {
+    sfixed32 Id = 1;
+    string Address = 2;
+}
+	
+message RequestTrafficSummary {
+
+}
+
+message TrafficSummary {
+	sfixed32 Id = 1;
+	fixed32 Sent = 2;
+	fixed32 Relayed = 3;
+	fixed32 Received = 4;
+	sfixed64 TotalSent = 5;
+	sfixed64 TotalReceived = 6;
+}
+
+message MiniChord {
+	oneof Message {
+		Registration registration  = 1;
+		RegistrationResponse registrationResponse = 2;
+		Deregistration deregistration = 3;
+		DeregistrationResponse deregistrationResponse = 4;
+		NodeRegistry nodeRegistry = 5;
+		NodeRegistryResponse nodeRegistryResponse = 6;
+		InitiateTask initiateTask = 7;
+		NodeData nodeData = 8;
+		TaskFinished taskFinished = 9;
+		RequestTrafficSummary requestTrafficSummary = 10;
+		TrafficSummary reportTrafficSummary = 11;
+	}
+}
