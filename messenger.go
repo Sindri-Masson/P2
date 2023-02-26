@@ -61,13 +61,14 @@ func (m *MessagingNode) Run() {
 	}
 }
 
-// func (m *MessagingNode) acceptConnection() (net.Conn, error) {
-// 	conn, err := m.conn.Accept()
-// 	if err != nil {
-// 		return nil, err
-// 	}
-// 	return conn, nil
-// }
+func (m *MessagingNode) acceptConnection() (net.Conn, error) {
+	// conn, err := m.conn.Accept()
+	// if err != nil {
+	// 	return nil, err
+	// }
+	// return conn, nil
+	return nil, nil;
+}
 
 func (m *MessagingNode) handleIncomingMessages(conn net.Conn) {
 	defer conn.Close()
