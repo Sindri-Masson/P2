@@ -6,7 +6,7 @@
 // 	protoc        v3.21.12
 // source: minichord.proto
 
-package main
+package minichord
 
 import (
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"

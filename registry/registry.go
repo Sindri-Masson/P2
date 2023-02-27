@@ -1,12 +1,20 @@
-package registry
+package main
 
 import (
+	"P2/minichord"
 	"fmt"
 	"math/rand"
 	"net"
 	"os"
+	"strconv"
 	"sync"
+
+	"google.golang.org/protobuf/proto"
 )
+
+var NrOfNodes int32 = 0
+var registry *Registry;
+var routingTable map[int32]string;
 
 // MessagingNode represents a registered node in the system
 type RMessagingNode struct {
@@ -19,17 +27,16 @@ type RoutingTable struct {
     routingTable [][]int
 }
 
-
 // Registry represents the system registry
 type Registry struct {
-	nodes map[net.Addr]*RMessagingNode // map of registered messaging nodes
+	nodes map[string]*RMessagingNode // map of registered messaging nodes
 	mu    sync.Mutex // mutex to protect concurrent access to the nodes map
 }
 
 // NewRegistry creates a new registry instance
 func NewRegistry() *Registry {
 	return &Registry{
-		nodes: make(map[net.Addr]*RMessagingNode),
+		nodes: make(map[string]*RMessagingNode),
 	}
 }
 
@@ -39,7 +46,7 @@ func (r *Registry) RegisterNode(conn net.Conn) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	if _, ok := r.nodes[addr]; ok {
+	if _, ok := r.nodes[addr.String()]; ok {
 		return fmt.Errorf("node already registered: %s", addr)
 	}
 
@@ -52,7 +59,7 @@ func (r *Registry) RegisterNode(conn net.Conn) error {
 		ID:         id,
 		Connection: conn,
 	}
-	r.nodes[addr] = node
+	r.nodes[addr.String()] = node
 
 	// send response to the messaging node
 	response := fmt.Sprintf("Registered with ID %d", id)
@@ -70,11 +77,11 @@ func (r *Registry) DeregisterNode(conn net.Conn) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	if _, ok := r.nodes[addr]; !ok {
+	if _, ok := r.nodes[addr.String()]; !ok {
 		return fmt.Errorf("node not registered: %s", addr)
 	}
 
-	delete(r.nodes, addr)
+	delete(r.nodes, addr.String())
 
 	// send response to the messaging node
 	response := "Deregistered successfully"
@@ -179,14 +186,152 @@ func (r *Registry) Start() error {
 	return nil
 }
 
+func AssignIDs() int32 {
+	return NrOfNodes+1
+}
 
-//
-// main
-//
+func readMessage(conn net.Conn) {
+	var id int32;
+	for {
+		buffer := make([]byte, 65535)
+		length, err := conn.Read(buffer)
+		message := minichord.MiniChord{}
+		err = proto.Unmarshal(buffer[:length], &message)
+		if err != nil {fmt.Println("Error in unmarshalling")}
+		if message.Message == nil{return}
+		switch message.Message.(type) {
+		case *minichord.MiniChord_Registration:
+			id := AssignIDs()
+			Sender(message.GetRegistration().Address, strconv.Itoa(int(id)), "registrationResponse")
+			NrOfNodes++
+			routingTable[id] = message.GetRegistration().Address
+		
+		case *minichord.MiniChord_RegistrationResponse:
+			fmt.Println("Registration response received: ", message.Message)
+
+		case *minichord.MiniChord_Deregistration:
+			id = message.GetDeregistration().Node.Id
+			fmt.Println("Deregistration message received: ", message.Message)
+			fmt.Println("Deregistration Node ID received: ", message.GetDeregistration().Node.Id)
+			Sender(message.GetDeregistration().Node.Address, strconv.Itoa(int(id)), "deregistrationResponse")
+			NrOfNodes--
+			delete(routingTable, id)
+			//NodesInOverlay = RemoveID(int(id))
+		
+		case *minichord.MiniChord_DeregistrationResponse:
+			fmt.Println("Deregistration response received: ", message.Message)
+		
+		case *minichord.MiniChord_NodeRegistry:
+			//TODO: Implement
+			fmt.Println("Node registry received: ", message.Message)
+		
+		case *minichord.MiniChord_NodeRegistryResponse:
+			fmt.Println("Node registry response received: ", message.Message)
+		
+		case *minichord.MiniChord_InitiateTask:
+			//TODO: Implement
+			fmt.Println("Task initiate received: ", message.Message)
+		
+		case *minichord.MiniChord_TaskFinished:
+			//TODO: Implement
+			fmt.Println("Task finished received: ", message.Message)
+		
+		case *minichord.MiniChord_NodeData:
+			//TODO: Implement
+			fmt.Println("Node data received: ", message.Message)
+		
+		case *minichord.MiniChord_RequestTrafficSummary:
+			//TODO: Implement
+			fmt.Println("Request traffic summary received: ", message.Message)
+		
+		case *minichord.MiniChord_ReportTrafficSummary:
+			//TODO: Implement
+			fmt.Println("Traffic summary received: ", message.Message)
+		}
+	}
+}
+
+func Sender(receiver string, message string, typ string) {
+	conn, err := net.Dial("tcp", receiver)
+	if err != nil {fmt.Println("Error in dialing")}
+	
+	conMess := constructMessage(message, typ)
+
+	data, err := proto.Marshal(conMess)
+	if err != nil {fmt.Println("Error in marshalling")}
+	_, err = conn.Write(data)
+	if err != nil {fmt.Println("Error in writing")}
+}
+
+func constructMessage(message string, typ string) *minichord.MiniChord {
+	switch typ {
+	case "registration":
+		return &minichord.MiniChord{
+			Message: &minichord.MiniChord_Registration{
+				Registration: &minichord.Registration{
+					Address: message,
+				},
+			},
+		}
+	case "registrationResponse":
+		id, _ := strconv.Atoi(message)
+		return &minichord.MiniChord{
+			Message: &minichord.MiniChord_RegistrationResponse{
+				RegistrationResponse: &minichord.RegistrationResponse{
+					Result: int32(id),
+					Info: "Registered successfully",
+				},
+			},
+		}
+	case "deregistration":
+		fmt.Println("Message: ", message)
+		/* return &minichord.MiniChord{
+			Message: &minichord.MiniChord_Deregistration{
+				Deregistration: &minichord.Deregistration{
+					Node: message,
+				},
+			},
+		} */
+		return nil
+	case "deregistrationResponse":
+		id, _ := strconv.Atoi(message)
+		return &minichord.MiniChord{
+			Message: &minichord.MiniChord_DeregistrationResponse{
+				DeregistrationResponse: &minichord.DeregistrationResponse{
+					Result: int32(id),
+					Info: "Deregistered successfully",
+				},
+			},
+		}
+	case "nodeRegistry":
+		// TODO: Implement
+		return nil
+	case "nodeRegistryResponse":
+		// TODO: Implement
+		return nil
+	case "initiateTask":
+		// TODO: Implement
+		return nil
+	case "nodeData":
+		// TODO: Implement
+		return nil
+	case "taskFinished":
+		// TODO: Implement
+		return nil
+	case "requestTrafficSummary":
+		// TODO: Implement
+		return nil
+	case "reportTrafficSummary":
+		// TODO: Implement
+		return nil
+	default:
+		return nil
+	}
+}
 
 
 func main() {
-	registry := NewRegistry()
+	registry = NewRegistry()
 
 	// start listening for incoming connections
 	port := os.Args[1]
