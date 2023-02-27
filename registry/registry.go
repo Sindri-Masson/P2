@@ -1,4 +1,4 @@
-package main
+package registry
 
 import (
 	"fmt"
@@ -103,7 +103,7 @@ func (r *Registry) hasNodeWithID(id int) bool {
 	return false
 }
 
-func main() {
+func registry() {
 	registry := NewRegistry()
 
 	// start listening for incoming connections
