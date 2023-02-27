@@ -21,6 +21,7 @@ type RMessagingNode struct {
 	ID         int // randomly assigned identifier
 	Connection net.Conn // connection to the messaging node
 }
+
 type RoutingTable struct {
     nodeID       int
     size         int
