@@ -1,4 +1,4 @@
-module main
+module github.com/Sindri-Masson/P2
 
 go 1.19
 

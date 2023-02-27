@@ -1,11 +1,11 @@
-package main
+package messenger
 
 import (
 	"fmt"
-	"net"
-	"time"
 	"math/rand"
+	"net"
 	"strings"
+	"time"
 )
 
 type MessagingNode struct {
