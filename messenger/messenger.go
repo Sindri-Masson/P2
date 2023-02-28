@@ -4,8 +4,9 @@ import (
 	"fmt"
 	"net"
 	"os"
-
+	"P2/minichord"
 	"google.golang.org/protobuf/proto"
+	"strconv"
 )
 
 type MessagingNode struct {
@@ -14,14 +15,83 @@ type MessagingNode struct {
 	conn    net.Conn
 }
 
+func constructMessage(message string, typ string) *minichord.MiniChord {
+	switch typ {
+	case "registration":
+		return &minichord.MiniChord{
+			Message: &minichord.MiniChord_Registration{
+				Registration: &minichord.Registration{
+					Address: message,
+				},
+			},
+		}
+	case "registrationResponse":
+		id, _ := strconv.Atoi(message)
+		return &minichord.MiniChord{
+			Message: &minichord.MiniChord_RegistrationResponse{
+				RegistrationResponse: &minichord.RegistrationResponse{
+					Result: int32(id),
+					Info: "Registered successfully",
+				},
+			},
+		}
+	case "deregistration":
+		fmt.Println("Message: ", message)
+		/* return &minichord.MiniChord{
+			Message: &minichord.MiniChord_Deregistration{
+				Deregistration: &minichord.Deregistration{
+					Node: message,
+				},
+			},
+		} */
+		return nil
+	case "deregistrationResponse":
+		id, _ := strconv.Atoi(message)
+		return &minichord.MiniChord{
+			Message: &minichord.MiniChord_DeregistrationResponse{
+				DeregistrationResponse: &minichord.DeregistrationResponse{
+					Result: int32(id),
+					Info: "Deregistered successfully",
+				},
+			},
+		}
+	case "nodeRegistry":
+		// TODO: Implement
+		return nil
+	case "nodeRegistryResponse":
+		// TODO: Implement
+		return nil
+	case "initiateTask":
+		// TODO: Implement
+		return nil
+	case "nodeData":
+		// TODO: Implement
+		return nil
+	case "taskFinished":
+		// TODO: Implement
+		return nil
+	case "requestTrafficSummary":
+		// TODO: Implement
+		return nil
+	case "reportTrafficSummary":
+		// TODO: Implement
+		return nil
+	default:
+		return nil
+	}
+}
+
 
 func sendMessage(node MessagingNode, message string) {
 	// send message to node using minichord
-	data, err =  proto.Marshal(message)
-	_, err := node.conn.Write([]byte(message))
+	envelope := constructMessage(message, "registration")
+	data, err := proto.Marshal(envelope)
+	fmt.Println(data)
+	new_data, err := node.conn.Write([]byte(data))
 	if err != nil {
 		fmt.Println("Error sending message:", err.Error())
 	}
+	fmt.Println("sending message: ", new_data)
 }
 
 
@@ -34,15 +104,10 @@ func handleConnection(conn net.Conn, connections *[]MessagingNode, otherPort str
 
 func main() {
 	// get command line arguments go tun messenger.go <port> <otherPort>
-	port := os.Args[1]
-	otherPort := ""
+	address := os.Args[1]
 	var connections []MessagingNode
-	// check number of arguments
-	if len(os.Args) == 3 {
-		otherPort = os.Args[2]
-	}
 	// bind to port and start listening
-	ln, err := net.Listen("tcp", ":"+port)
+	ln, err := net.Listen("tcp", address)
 	if err != nil {
 		fmt.Println("Error listening:", err.Error())
 		os.Exit(1)
@@ -54,18 +119,7 @@ func main() {
 				fmt.Println("Error accepting: ", err.Error())
 				os.Exit(1)
 			}
-			go handleConnection(conn, &connections, otherPort)
+			go handleConnection(conn, &connections, address)
 		}
-	}()
-	if otherPort != "" {
-		// connect to other node
-		// create a connection to the other node
-		conn, err := net.Dial("tcp", ":"+otherPort)
-		if err != nil {
-			fmt.Println("Error dialing:", err.Error())
-			os.Exit(1)
-		}
-		go handleConnection(conn, &connections, otherPort)
-	}
-	
+	}()	
 }
