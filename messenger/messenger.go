@@ -7,7 +7,7 @@ import (
 	"P2/minichord"
 	"google.golang.org/protobuf/proto"
 	"strconv"
-	"math/rand"
+	//"math/rand"
 )
 
 
@@ -18,6 +18,7 @@ type MessagingNode struct {
 }
 
 func constructMessage(message string, typ string) *minichord.MiniChord {
+	fmt.Println(message)
 	switch typ {
 	case "registration":
 		return &minichord.MiniChord{
@@ -84,10 +85,10 @@ func constructMessage(message string, typ string) *minichord.MiniChord {
 }
 
 
-func readMessage(node MessagingNode) {
+func readMessage(node MessagingNode, conn net.Conn) {
 	// read message from node using minichord
 	fmt.Println("reading message from node")
-	data := make([]byte, 1024)
+	data := make([]byte, 65535)
 	n, err := node.conn.Read(data)
 	if err != nil {
 		fmt.Println("Error reading message:", err.Error())
@@ -100,6 +101,10 @@ func readMessage(node MessagingNode) {
 	}
 	fmt.Println("unmarshalled message: ", envelope)
 	switch envelope.Message.(type) {
+	case *minichord.MiniChord_Registration:
+		fmt.Println("Registration received")
+		fmt.Println("Node ID: ", envelope.GetRegistration().Address)
+		Sender(envelope.GetRegistration().Address, conn.LocalAddr().String()  ,"registrationResponse")
 	case *minichord.MiniChord_RegistrationResponse:
 		fmt.Println("Registration response received")
 		fmt.Println("Node ID: ", envelope.GetRegistrationResponse().Result)
@@ -142,12 +147,25 @@ func readMessage(node MessagingNode) {
 	}
 }
 
+func Sender(receiver string, senderMessage string, typ string) {
+	conn, err := net.Dial("tcp", receiver)
+	if err != nil {fmt.Println("Error Conn", err)}
+
+	message := constructMessage(senderMessage, typ)
+	data, err := proto.Marshal(message)
+	if err != nil {fmt.Println("Error Marshal", err)}
+
+	// send message
+	_, err = conn.Write(data)
+	if err != nil {fmt.Println("Error Write", err)}
+}
 
 
 func sendMessage(node MessagingNode, message string) {
 	// send message to node using minichord
 	fmt.Println("sending message to node: ", message)
 	envelope := constructMessage(message, "registration")
+	fmt.Println("envelope: ", envelope)
 	data, err := proto.Marshal(envelope)
 	fmt.Println("marshalled data: ", data)
 	new_data, err := node.conn.Write(data)
@@ -171,10 +189,11 @@ func main() {
 	// get command line arguments go tun messenger.go <port> <otherPort>
 	address := os.Args[1]
 	var connections []MessagingNode
-	port := rand.Intn(65536-1024) + 1024
+	port := 1800
 	port_str := strconv.Itoa(port)
+	fmt.Println("port: ", port_str)
 	// bind to port and start listening
-	ln, err := net.Listen("tcp", "localhost:" + port_str)
+	ln, err := net.Listen("tcp", "127.0.0.1:" + port_str)
 	if err != nil {
 		fmt.Println("Error listening:", err.Error())
 		os.Exit(1)
@@ -185,8 +204,8 @@ func main() {
 		os.Exit(1)
 	}
 	node := MessagingNode{1, address, conn}
-	sendMessage(node, port_str)
 	// close the listener when the application closes
+	readMessage(node, conn)
 	go func () {
 		for {
 			conn, err := ln.Accept()
@@ -197,7 +216,7 @@ func main() {
 			fmt.Printf("ding")
 			go handleConnection(conn, &connections, address)
 		}
+		
 	}()
-	go readMessage(node)
 	select{}
 }

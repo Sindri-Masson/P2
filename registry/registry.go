@@ -4,7 +4,6 @@ import (
 	"P2/minichord"
 	"bufio"
 	"fmt"
-	"math"
 	"math/rand"
 	"net"
 	"os"
@@ -43,8 +42,7 @@ func RegisterNode(conn net.Conn, message minichord.MiniChord) error {
 	for !registry.mu.TryLock() {
 		continue
 	}
-	registry.mu.Lock()
-	defer registry.mu.Unlock()
+	
 
 	// check if registry is full
 	if len(registry.nodes) == 128 {
@@ -122,23 +120,34 @@ func distance(n1, n2, maxID int) int {
 	return d
 }
 
-func GetRoutingTable(nodePlacement, size int, nodes []int) []int {
+func GetRoutingTable(nodeID int, nodes []int) map[int][]int {
 	// Compute the size of the ID space
-	numIds := len(nodes)
+	maxID := 1
+	for maxID < len(nodes) {
+		maxID *= 2
+	}
+
+	// Compute the size of the routing table
+	k := 0
+	for (1 << k) <= maxID {
+		k++
+	}
 
 	// Initialize the routing table
-	routingTable := []int{}
+	routingTable := make(map[int][]int)
+	for i := 1; i <= k; i++ {
+		routingTable[i] = make([]int, 0)
+	}
 
 	// Compute the routing table for the given node
-	for i := 0; i < size; i++ {
-		hops := math.Pow(2, float64(i))
-		target := (nodePlacement + int(hops)) % numIds
-
-		if target == nodePlacement {
-			target = (target + 1) % numIds
+	for i := 0; i < k; i++ {
+		hop := 1 << i
+		target := (nodeID + hop) % maxID
+		for _, n := range nodes {
+			if distance(n, target, maxID) < distance(nodeID, target, maxID) {
+				routingTable[i+1] = append(routingTable[i+1], n)
+			}
 		}
-
-		routingTable = append(routingTable, nodes[target])
 	}
 
 	return routingTable
@@ -336,12 +345,8 @@ func constructMessage(message string, typ string) *minichord.MiniChord {
 func setupOverlay(num string) {
 	fmt.Println("Setup overlay with ", num, " nodes")
 	var numInt, err = strconv.Atoi(num)
-	if err != nil || numInt < 1 || numInt >= len(registry.nodes) || math.Pow(2, float64(numInt-1)) > float64(len(registry.nodes)) {
-		fmt.Println("Invalid size of table")
-		return
-	}
-	if len(registry.nodes) < 10 {
-		fmt.Println("Not enough nodes to setup overlay")
+	if err != nil || numInt < 1 || numInt >= len(registry.nodes) {
+		fmt.Println("Invalid number of nodes")
 		return
 	}
 	ids := []int{}
@@ -399,16 +404,6 @@ func main() {
 	go readUserInput()
 
 	registry = NewRegistry()
-	registry.nodes[11] = "localhost:8081"
-	registry.nodes[22] = "localhost:8082"
-	registry.nodes[33] = "localhost:8083"
-	registry.nodes[44] = "localhost:8084"
-	registry.nodes[55] = "localhost:8085"
-	registry.nodes[66] = "localhost:8086"
-	registry.nodes[77] = "localhost:8087"
-	registry.nodes[88] = "localhost:8088"
-	registry.nodes[99] = "localhost:8089"
-	registry.nodes[100] = "localhost:8090"
 
 	// start listening for incoming connections
 	port := os.Args[1]
