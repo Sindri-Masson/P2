@@ -4,6 +4,7 @@ import (
 	"P2/minichord"
 	"bufio"
 	"fmt"
+	"math"
 	"math/rand"
 	"net"
 	"os"
@@ -120,37 +121,28 @@ func distance(n1, n2, maxID int) int {
 	return d
 }
 
-func GetRoutingTable(nodeID int, nodes []int) map[int][]int {
-	// Compute the size of the ID space
-	maxID := 1
-	for maxID < len(nodes) {
-		maxID *= 2
-	}
 
-	// Compute the size of the routing table
-	k := 0
-	for (1 << k) <= maxID {
-		k++
-	}
+func GetRoutingTable(nodePlacement, size int, nodes []int) []int {
+	// Compute the size of the ID space
+	numIds := len(nodes)
 
 	// Initialize the routing table
-	routingTable := make(map[int][]int)
-	for i := 1; i <= k; i++ {
-		routingTable[i] = make([]int, 0)
-	}
+	routingTable := []int{}
 
 	// Compute the routing table for the given node
-	for i := 0; i < k; i++ {
-		hop := 1 << i
-		target := (nodeID + hop) % maxID
-		for _, n := range nodes {
-			if distance(n, target, maxID) < distance(nodeID, target, maxID) {
-				routingTable[i+1] = append(routingTable[i+1], n)
-			}
+	for i := 0; i < size; i++ {
+		hops := math.Pow(2, float64(i))
+		target := (nodePlacement + int(hops)) % numIds
+
+		if target == nodePlacement {
+			target = (target + 1) % numIds
 		}
+
+		routingTable = append(routingTable, nodes[target])
 	}
 
 	return routingTable
+	
 }
 
 //Send TaskInitiate message in start function
