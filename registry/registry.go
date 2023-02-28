@@ -4,9 +4,11 @@ import (
 	"P2/minichord"
 	"bufio"
 	"fmt"
+	"math"
 	"math/rand"
 	"net"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -119,34 +121,23 @@ func distance(n1, n2, maxID int) int {
 	return d
 }
 
-func GetRoutingTable(nodeID int, nodes []int) map[int][]int {
+func GetRoutingTable(nodePlacement, size int, nodes []int) []int {
 	// Compute the size of the ID space
-	maxID := 1
-	for maxID < len(nodes) {
-		maxID *= 2
-	}
-
-	// Compute the size of the routing table
-	k := 0
-	for (1 << k) <= maxID {
-		k++
-	}
+	numIds := len(nodes)
 
 	// Initialize the routing table
-	routingTable := make(map[int][]int)
-	for i := 1; i <= k; i++ {
-		routingTable[i] = make([]int, 0)
-	}
+	routingTable := []int{}
 
 	// Compute the routing table for the given node
-	for i := 0; i < k; i++ {
-		hop := 1 << i
-		target := (nodeID + hop) % maxID
-		for _, n := range nodes {
-			if distance(n, target, maxID) < distance(nodeID, target, maxID) {
-				routingTable[i+1] = append(routingTable[i+1], n)
-			}
+	for i := 0; i < size; i++ {
+		hops := math.Pow(2, float64(i))
+		target := (nodePlacement + int(hops)) % numIds
+
+		if target == nodePlacement {
+			target = (target + 1) % numIds
 		}
+
+		routingTable = append(routingTable, nodes[target])
 	}
 
 	return routingTable
@@ -291,7 +282,6 @@ func constructMessage(message string, typ string) *minichord.MiniChord {
 		}
 	case "nodeRegistry":
 		// TODO: Implement
-		// registry should not receive this message
 		return nil
 	case "nodeRegistryResponse":
 		// TODO: Implement
@@ -319,14 +309,31 @@ func constructMessage(message string, typ string) *minichord.MiniChord {
 func setupOverlay(num string) {
 	fmt.Println("Setup overlay with ", num, " nodes")
 	var numInt, err = strconv.Atoi(num)
-	if err != nil || numInt < 1 || numInt >= len(registry.nodes) {
-		fmt.Println("Invalid number of nodes")
+	if err != nil || numInt < 1 || numInt >= len(registry.nodes) || math.Pow(2, float64(numInt-1)) > float64(len(registry.nodes)) {
+		fmt.Println("Invalid size of table")
 		return
 	}
-	/* for node := range registry.nodes {
-		// make a routing table for each node
+	if len(registry.nodes) < 10 {
+		fmt.Println("Not enough nodes to setup overlay")
+		return
+	}
+	ids := []int{}
+	for id := range registry.nodes {
+		ids = append(ids, id)
+	}
+	// sort the ids
+	sort.Ints(ids)
+	for id := range ids {
+		table := GetRoutingTable(id, numInt, ids)
+		fmt.Println("routing table for ", ids[id], table)
+		go translateTable(ids[id], numInt, table)
+	}
+}
 
-	} */
+func translateTable(id, num int, table []int) {
+	// make a map of the table
+	Sender(registry.nodes[id], strconv.Itoa(num), "nodeRegistry")
+
 }
 
 func readUserInput() {
@@ -362,6 +369,16 @@ func main() {
 	go readUserInput()
 
 	registry = NewRegistry()
+	registry.nodes[11] = "localhost:8081"
+	registry.nodes[22] = "localhost:8082"
+	registry.nodes[33] = "localhost:8083"
+	registry.nodes[44] = "localhost:8084"
+	registry.nodes[55] = "localhost:8085"
+	registry.nodes[66] = "localhost:8086"
+	registry.nodes[77] = "localhost:8087"
+	registry.nodes[88] = "localhost:8088"
+	registry.nodes[99] = "localhost:8089"
+	registry.nodes[100] = "localhost:8090"
 
 	// start listening for incoming connections
 	port := os.Args[1]
