@@ -10,13 +10,13 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"google.golang.org/protobuf/proto"
 )
 
 const TYPE = "tcp"
 
-var NrOfNodes int32 = 0
 var registry Registry;
 
 
@@ -34,7 +34,7 @@ func NewRegistry() Registry {
 }
 
 // RegisterNode registers a messaging node in the system and assigns an ID
-func RegisterNode(conn net.Conn) error {
+func RegisterNode(conn net.Conn, message minichord.MiniChord) error {
 	addr := conn.RemoteAddr()
 
 	for !registry.mu.TryLock() {
@@ -43,9 +43,22 @@ func RegisterNode(conn net.Conn) error {
 	registry.mu.Lock()
 	defer registry.mu.Unlock()
 
+	// check if registry is full
+	if len(registry.nodes) == 128 {
+		Sender(addr.String(), "-1", "registrationResponse")
+		return fmt.Errorf("registry is full")
+	}
+
+	// check if address is the same as message sender
+	if addr.String() != message.GetRegistration().Address {
+		Sender(addr.String(), "-3", "registrationResponse")
+		return fmt.Errorf("address mismatch: %s != %s", addr, message.GetRegistration().Address)
+	}
+
 	// check if node is already registered
 	for _, x := range registry.nodes {
 		if x == addr.String() {
+			Sender(addr.String(), "-2", "registrationResponse")
 			return fmt.Errorf("node already registered: %s", addr)
 		}
 	}
@@ -63,7 +76,6 @@ func RegisterNode(conn net.Conn) error {
 	// send response to the messaging node
 
 	Sender(addr.String(), strconv.Itoa(int(id)), "registrationResponse")
-	NrOfNodes++
 	registry.nodes[id] = addr.String()
 
 	return nil
@@ -80,13 +92,21 @@ func DeregisterNode(conn net.Conn, id int) error {
 	// check if node is registered
 	var _, ok = registry.nodes[id]
 	if !ok {
+		Sender(conn.RemoteAddr().String(), "-1", "deregistrationResponse")
 		return fmt.Errorf("node not registered: %d", id)
 	}
 
+	// check if node is deregistering itself
+	if registry.nodes[id] != conn.RemoteAddr().String() {
+		Sender(conn.RemoteAddr().String(), "-2", "deregistrationResponse")
+		return fmt.Errorf("node not deregistering itself: %d", id)
+	}
+
+	// deregister node
 	delete(registry.nodes, id)
 
 	// send response to the messaging node
-	Sender(conn.RemoteAddr().String(), strconv.Itoa(int(id)), "deregistrationResponse")
+	Sender(conn.RemoteAddr().String(), "1", "deregistrationResponse")
 
 	return nil
 }
@@ -145,14 +165,20 @@ func readMessage(conn net.Conn) {
 	var id int32;
 	for {
 		buffer := make([]byte, 65535)
+		conn.SetReadDeadline(time.Now().Add(5 * time.Second))
 		length, err := conn.Read(buffer)
+		if err != nil {
+			fmt.Println("Error in reading message")
+			return
+		}
+
 		message := minichord.MiniChord{}
 		err = proto.Unmarshal(buffer[:length], &message)
 		if err != nil {fmt.Println("Error in unmarshalling")}
 		if message.Message == nil{return}
 		switch message.Message.(type) {
 		case *minichord.MiniChord_Registration:
-			go RegisterNode(conn)
+			RegisterNode(conn, message)
 		
 		case *minichord.MiniChord_RegistrationResponse:
 			fmt.Println("Registration response received: ", message.Message)
@@ -162,9 +188,6 @@ func readMessage(conn net.Conn) {
 			fmt.Println("Deregistration message received: ", message.Message)
 			fmt.Println("Deregistration Node ID received: ", id)
 			DeregisterNode(conn, int(id))
-			Sender(message.GetDeregistration().Node.Address, strconv.Itoa(int(id)), "deregistrationResponse")
-			NrOfNodes--
-			//NodesInOverlay = RemoveID(int(id))
 		
 		case *minichord.MiniChord_DeregistrationResponse:
 			fmt.Println("Deregistration response received: ", message.Message)
@@ -223,11 +246,19 @@ func constructMessage(message string, typ string) *minichord.MiniChord {
 		}
 	case "registrationResponse":
 		id, _ := strconv.Atoi(message)
+		info := "Registered successfully"
+		if id == -1 {
+			info = "Registration failed, registry is full"
+		}else if id == -2{
+			info = "Registration failed, node already registered"
+		} else if id == -3 {
+			info = "Registration failed, node address does not match sender"
+		}
 		return &minichord.MiniChord{
 			Message: &minichord.MiniChord_RegistrationResponse{
 				RegistrationResponse: &minichord.RegistrationResponse{
 					Result: int32(id),
-					Info: "Registered successfully",
+					Info: info,
 				},
 			},
 		}
@@ -243,16 +274,24 @@ func constructMessage(message string, typ string) *minichord.MiniChord {
 		return nil
 	case "deregistrationResponse":
 		id, _ := strconv.Atoi(message)
+		info := "Deregistered successfully"
+		if id == -1 {
+			info = "Deregistration failed, node not registered"
+		} else if id == -2 {
+			info = "Deregistration failed, node must deregister itself"
+		}
+
 		return &minichord.MiniChord{
 			Message: &minichord.MiniChord_DeregistrationResponse{
 				DeregistrationResponse: &minichord.DeregistrationResponse{
 					Result: int32(id),
-					Info: "Deregistered successfully",
+					Info: info,
 				},
 			},
 		}
 	case "nodeRegistry":
 		// TODO: Implement
+		// registry should not receive this message
 		return nil
 	case "nodeRegistryResponse":
 		// TODO: Implement
@@ -277,6 +316,19 @@ func constructMessage(message string, typ string) *minichord.MiniChord {
 	}
 }
 
+func setupOverlay(num string) {
+	fmt.Println("Setup overlay with ", num, " nodes")
+	var numInt, err = strconv.Atoi(num)
+	if err != nil || numInt < 1 || numInt >= len(registry.nodes) {
+		fmt.Println("Invalid number of nodes")
+		return
+	}
+	/* for node := range registry.nodes {
+		// make a routing table for each node
+
+	} */
+}
+
 func readUserInput() {
 	reader := bufio.NewReader(os.Stdin)
 	for {
@@ -291,7 +343,10 @@ func readUserInput() {
 		case "list":
 			fmt.Println("list")
 		case "setup":
-			fmt.Println("Setup")
+			if len(cmdSlice) != 2 {
+				cmdSlice = append(cmdSlice, "3")
+			}
+			go setupOverlay(cmdSlice[1])
 		case "route":
 			fmt.Println("route")
 		case "start":
