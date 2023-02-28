@@ -20,6 +20,7 @@ import (
 const TYPE = "tcp"
 
 var registry Registry;
+var routingTables map[int][]int
 
 
 // Registry represents the system registry
@@ -282,7 +283,33 @@ func constructMessage(message string, typ string) *minichord.MiniChord {
 		}
 	case "nodeRegistry":
 		// TODO: Implement
-		return nil
+		msg_split := strings.Split(message, ",")
+		num := len(msg_split)
+		peers := []*minichord.Node{}
+		for i := 0; i < num; i++ {
+			var id, _ = strconv.Atoi(msg_split[i])
+			peer := &minichord.Node{
+				Id: int32(id),
+				Address: registry.nodes[id],
+			}
+			peers = append(peers, peer)
+		}
+		ids := make([]int32, len(registry.nodes))
+		i := 0
+  		for k := range registry.nodes {
+    		ids[i] = int32(k)
+    		i++
+  		}
+		return &minichord.MiniChord{
+			Message: &minichord.MiniChord_NodeRegistry{
+				NodeRegistry: &minichord.NodeRegistry{
+					NR: uint32(num),
+					Peers: peers,
+					NoIds: uint32(len(registry.nodes)),
+					Ids: ids,
+				},
+			},
+		}
 	case "nodeRegistryResponse":
 		// TODO: Implement
 		return nil
@@ -324,16 +351,19 @@ func setupOverlay(num string) {
 	// sort the ids
 	sort.Ints(ids)
 	for id := range ids {
-		table := GetRoutingTable(id, numInt, ids)
-		fmt.Println("routing table for ", ids[id], table)
-		go translateTable(ids[id], numInt, table)
+		routingTables[id] = GetRoutingTable(id, numInt, ids)
+		fmt.Println("routing table for ", ids[id], routingTables[id])
+		go Sender(registry.nodes[id], num, "nodeRegistry")
 	}
 }
 
 func translateTable(id, num int, table []int) {
-	// make a map of the table
-	Sender(registry.nodes[id], strconv.Itoa(num), "nodeRegistry")
-
+	message := ""
+	for i := range table {
+		message += strconv.Itoa(table[i]) + ","
+	}
+	message = strings.TrimRight(message, ",")
+	Sender(registry.nodes[id], message, "nodeRegistry")
 }
 
 func readUserInput() {
