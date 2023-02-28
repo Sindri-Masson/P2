@@ -36,7 +36,7 @@ func NewRegistry() Registry {
 // RegisterNode registers a messaging node in the system and assigns an ID
 func RegisterNode(conn net.Conn, message minichord.MiniChord) error {
 	addr := conn.RemoteAddr()
-
+	fmt.Println("Registering node: ", addr.String())
 	for !registry.mu.TryLock() {
 		continue
 	}
@@ -365,9 +365,9 @@ func main() {
 
 	// start listening for incoming connections
 	port := os.Args[1]
-	ln, err := net.Listen("tcp", ":" + port)
+	ln, err := net.Listen("tcp", "localhost:" + port)
 	//print
-	fmt.Println("Registry is running on port 8080")
+	fmt.Println("Registry is running on port: ", port)
 	if err != nil {
 		// handle listen error
 		fmt.Println("Error listening")
@@ -377,6 +377,7 @@ func main() {
 
 	// accept incoming connections and register messaging nodes
 	for {
+		fmt.Println("Waiting for new connection")
 		conn, err := ln.Accept()
 		if err != nil {
 			// handle accept error
@@ -385,6 +386,7 @@ func main() {
 		}
 
 		// handle messages in a separate goroutine to avoid blocking
+		fmt.Println("New connection")
 		go readMessage(conn)
 	}
 }
