@@ -8,7 +8,6 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"math/rand"
@@ -19,7 +18,7 @@ import (
 var registry string
 var registryConn net.Conn
 var address string
-var id string
+var id int32
 
 
 type MessagingNode struct {
@@ -51,14 +50,17 @@ func constructMessage(message string, typ string) *minichord.MiniChord {
 		}
 	case "deregistration":
 		fmt.Println("Message: ", message)
-		/* return &minichord.MiniChord{
+		id, _ := strconv.Atoi(message)
+		return &minichord.MiniChord{
 			Message: &minichord.MiniChord_Deregistration{
 				Deregistration: &minichord.Deregistration{
-					Node: message,
+					Node: &minichord.Node{
+						Id: int32(id),
+						Address: address,
+					},
 				},
 			},
-		} */
-		return nil
+		}
 	case "deregistrationResponse":
 		id, _ := strconv.Atoi(message)
 		return &minichord.MiniChord{
@@ -96,11 +98,11 @@ func constructMessage(message string, typ string) *minichord.MiniChord {
 }
 
 
-func readMessage(conn net.Conn, exitwg *sync.WaitGroup) {
+func readMessage(conn net.Conn) {
 	// read message from node using minichord
-	fmt.Println("reading message from node")
+	fmt.Println("reading message from someone")
 	data := make([]byte, 65535)
-	fmt.Println("making data")
+
 	fmt.Println("connection:", conn.RemoteAddr().String())
 	n, _ := conn.Read(data)
 	fmt.Println("received message: ", data[:n])
@@ -119,15 +121,20 @@ func readMessage(conn net.Conn, exitwg *sync.WaitGroup) {
 		fmt.Println("Registration response received")
 		fmt.Println("Node ID: ", envelope.GetRegistrationResponse().Result)
 		fmt.Println("Info: ", envelope.GetRegistrationResponse().Info)
+		if envelope.GetRegistrationResponse().Result < 1 {
+			fmt.Println("Registration failed")
+			os.Exit(1)
+		}
+		id = envelope.GetRegistrationResponse().Result
+
 	case *minichord.MiniChord_DeregistrationResponse:
 		fmt.Println("Deregistration response received")
 		fmt.Println("result: ", envelope.GetDeregistrationResponse().Result)
 		fmt.Println("Info: ", envelope.GetDeregistrationResponse().Info)
-		if envelope.GetDeregistrationResponse().Result == 1 {
+		if envelope.GetDeregistrationResponse().Result == id {
 			fmt.Println("Deregistered successfully")
 			os.Exit(0)
 		}
-		exitwg.Done()
 
 	case *minichord.MiniChord_NodeRegistry:
 		fmt.Println("Node registry received")
@@ -216,7 +223,10 @@ func readUserInput() {
 			fmt.Println("Asked to print")
 		case "exit":
 			fmt.Println("Deregistering from the network")
-			Sender(registry, id, "deregistration")
+			// change id to string
+			id_string := strconv.Itoa(int(id))
+
+			Sender(registry, id_string, "deregistration")
 		default:
 			fmt.Printf("command not understood: %s\n", cmd)
 		}
@@ -227,12 +237,11 @@ func main() {
 	go readUserInput()
 	// get command line arguments go tun messenger.go <port> <otherPort>
 	registry = os.Args[1]
-	var connections []MessagingNode
 	rand.Seed(time.Now().UnixNano())
 	port := rand.Intn(1000) + 1024
 	port_str := strconv.Itoa(port)
 	fmt.Println("port: ", port_str)
-	address := "127.0.0.1:" + port_str
+	address = "127.0.0.1:" + port_str
 
 	// bind to port and start listening
 	ln, err := net.Listen("tcp", address)
@@ -264,7 +273,7 @@ func main() {
 				os.Exit(1)
 			}
 			fmt.Printf("ding")
-			go handleConnection(conn, &connections, address)
+			go readMessage(conn)
 		}
 		
 	}()
