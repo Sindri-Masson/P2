@@ -76,16 +76,68 @@ func constructMessage(message string, typ string) *minichord.MiniChord {
 		return nil
 	case "nodeRegistryResponse":
 		// TODO: Implement
-		return nil
+		if message == "1" {
+			return &minichord.MiniChord{
+				Message: &minichord.MiniChord_NodeRegistryResponse{
+					NodeRegistryResponse: &minichord.NodeRegistryResponse{
+						Result: 1,
+						Info: "Node registry received",
+					},
+				},
+			}
+		} else {
+			return &minichord.MiniChord{
+				Message: &minichord.MiniChord_NodeRegistryResponse{
+					NodeRegistryResponse: &minichord.NodeRegistryResponse{
+						Result: 0,
+						Info: "Node registry not received",
+					},
+				},
+			}
+		}
 	case "initiateTask":
 		// TODO: Implement
 		return nil
 	case "nodeData":
 		// TODO: Implement
+		trace := make([]int32, 0, 127)
+		data := strings.Split(message, ",")
+		dest, _ := strconv.Atoi(data[0])
+		int_dest := int32(dest)
+		source, _ := strconv.Atoi(data[1])
+		int_source := int32(source)
+		payload, _ := strconv.Atoi(data[2])
+		hopCount, _ := strconv.Atoi(data[3])
+		int_hopCount := uint32(hopCount)
+
+		trace = StoI(data[4:])
+
+		return &minichord.MiniChord{
+			Message: &minichord.MiniChord_NodeData{
+				NodeData: &minichord.NodeData{
+					Destination: int_dest,
+					Source: int_source,
+					Payload: int32(payload),
+					Hops: int_hopCount,
+					Trace: trace,
+				},
+			},
+		}
 		return nil
 	case "taskFinished":
 		// TODO: Implement
-		return nil
+		new_message := strings.Split(message, ",")
+		id := new_message[0]
+		int_id, _ := strconv.Atoi(id)
+		address := new_message[1]
+		return &minichord.MiniChord{
+			Message: &minichord.MiniChord_TaskFinished{
+				TaskFinished: &minichord.TaskFinished{
+					Id: int32(int_id),
+					Address: address,
+				},
+			},
+		}
 	case "requestTrafficSummary":
 		// TODO: Implement
 		return nil
@@ -201,9 +253,20 @@ func sendMessage(node MessagingNode, message string) {
 func handleConnection(conn net.Conn, connections *[]MessagingNode, otherPort string) {
 	// add connection to list of connections
 	// create a new MessagingNode
-	fmt.Printf("handling connection")
 	node := MessagingNode{len(*connections)+1, conn.RemoteAddr().String(), conn}
 	*connections = append(*connections, node)
+}
+
+func StoI(s []string) []int32 {
+	var t2 = []int32{}
+	for _, v := range s {
+		t, err := strconv.Atoi(v)
+		if err != nil {
+			panic(err)
+		}
+		t2 = append(t2, int32(t))
+	}
+	return t2
 }
 
 func readUserInput() {
