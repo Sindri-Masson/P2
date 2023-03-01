@@ -1,15 +1,25 @@
 package main
 
 import (
+	"P2/minichord"
+	"bufio"
 	"fmt"
 	"net"
 	"os"
-	"P2/minichord"
-	"google.golang.org/protobuf/proto"
 	"strconv"
+	"strings"
 	"sync"
-	//"math/rand"
+	"time"
+
+	"math/rand"
+
+	"google.golang.org/protobuf/proto"
 )
+
+var registry string
+var registryConn net.Conn
+var address string
+var id string
 
 
 type MessagingNode struct {
@@ -111,9 +121,14 @@ func readMessage(conn net.Conn, exitwg *sync.WaitGroup) {
 		fmt.Println("Info: ", envelope.GetRegistrationResponse().Info)
 	case *minichord.MiniChord_DeregistrationResponse:
 		fmt.Println("Deregistration response received")
-		fmt.Println("Node ID: ", envelope.GetDeregistrationResponse().Result)
+		fmt.Println("result: ", envelope.GetDeregistrationResponse().Result)
 		fmt.Println("Info: ", envelope.GetDeregistrationResponse().Info)
+		if envelope.GetDeregistrationResponse().Result == 1 {
+			fmt.Println("Deregistered successfully")
+			os.Exit(0)
+		}
 		exitwg.Done()
+
 	case *minichord.MiniChord_NodeRegistry:
 		fmt.Println("Node registry received")
 		fmt.Println("Node ID: ", envelope.GetNodeRegistry().Ids)
@@ -186,32 +201,61 @@ func handleConnection(conn net.Conn, connections *[]MessagingNode, otherPort str
 	*connections = append(*connections, node)
 }
 
+func readUserInput() {
+	reader := bufio.NewReader(os.Stdin)
+	for {
+		cmd, err := reader.ReadString('\n')
+		if err != nil {
+			fmt.Println(err)
+			break
+		}
+		cmd = strings.Trim(cmd, "\n")
+		var cmdSlice = strings.Split(cmd, " ")
+		switch (cmdSlice[0]) {
+		case "print":
+			fmt.Println("Asked to print")
+		case "exit":
+			fmt.Println("Deregistering from the network")
+			Sender(registry, id, "deregistration")
+		default:
+			fmt.Printf("command not understood: %s\n", cmd)
+		}
+	}
+}
+
 func main() {
+	go readUserInput()
 	// get command line arguments go tun messenger.go <port> <otherPort>
-	address := os.Args[1]
+	registry = os.Args[1]
 	var connections []MessagingNode
-	// port := "1800"
-	// fmt.Println("port: ", port_str)
+	rand.Seed(time.Now().UnixNano())
+	port := rand.Intn(1000) + 1024
+	port_str := strconv.Itoa(port)
+	fmt.Println("port: ", port_str)
+	address := "127.0.0.1:" + port_str
+
 	// bind to port and start listening
-	ln, err := net.Listen("tcp", "127.0.0.1:1800")
+	ln, err := net.Listen("tcp", address)
 	if err != nil {
 		fmt.Println("Error listening:", err.Error())
 		os.Exit(1)
 	}
-	fmt.Println("connecting to ", address)
-	conn, err := net.Dial("tcp", address)
+	fmt.Println("connecting to ", registry)
+	conn, err := net.Dial("tcp", registry)
+	if err != nil {
+		fmt.Println("Error connecting to registry:", err.Error())
+		os.Exit(1)
+	}
 	fmt.Println("connected to ", conn.RemoteAddr().String())
 	if err != nil {
 		fmt.Println("Error dialing:", err.Error())
 		os.Exit(1)
 	}
-
-	// close the listener when the application closes
 	
-	//make waitgroup
-	var exitwg sync.WaitGroup
-	Sender(address, "-3" ,"registration")
-	readMessage(conn, &exitwg)
+	// send registration message to registry
+	Sender(registry, address, "registration")
+	
+	// continuously accept connections
 	go func () {
 		for {
 			conn, err := ln.Accept()

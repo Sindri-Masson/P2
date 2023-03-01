@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+
 	//"time"
 
 	"google.golang.org/protobuf/proto"
@@ -38,29 +39,27 @@ func NewRegistry() Registry {
 
 // RegisterNode registers a messaging node in the system and assigns an ID
 func RegisterNode(conn net.Conn, message minichord.MiniChord) error {
-	addr := conn.RemoteAddr()
-	fmt.Println("Registering node: ", addr.String())
-	for !registry.mu.TryLock() {
-		continue
-	}
-	
+	addr := message.GetRegistration().GetAddress()
+	fmt.Println("Registering node: ", addr)
+	registry.mu.Lock()
+	defer registry.mu.Unlock()
 
 	// check if registry is full
 	if len(registry.nodes) == 128 {
-		Sender(addr.String(), "-1", "registrationResponse")
+		Sender(addr, "-1", "registrationResponse")
 		return fmt.Errorf("registry is full")
 	}
 
 	// check if address is the same as message sender
-	if addr.String() != message.GetRegistration().Address {
+	/* if addr.String() != message.GetRegistration().Address {
 		Sender(addr.String(), "-3", "registrationResponse")
 		return fmt.Errorf("address mismatch: %s != %s", addr, message.GetRegistration().Address)
-	}
+	} */
 
 	// check if node is already registered
 	for _, x := range registry.nodes {
-		if x == addr.String() {
-			Sender(addr.String(), "-2", "registrationResponse")
+		if x == addr {
+			Sender(addr, "-2", "registrationResponse")
 			return fmt.Errorf("node already registered: %s", addr)
 		}
 	}
@@ -72,13 +71,12 @@ func RegisterNode(conn net.Conn, message minichord.MiniChord) error {
 		id = rand.Intn(128)
 		_, ok = registry.nodes[id]
 	}
-
-	registry.nodes[id] = addr.String()
+	registry.nodes[id] = addr
+	fmt.Println("Registered node: ", id, addr)
 
 	// send response to the messaging node
 
-	Sender(addr.String(), strconv.Itoa(int(id)), "registrationResponse")
-	registry.nodes[id] = addr.String()
+	Sender(addr, strconv.Itoa(int(id)), "registrationResponse")
 
 	return nil
 }
@@ -168,9 +166,8 @@ func readMessage(conn net.Conn) {
 		if message.Message == nil{return}
 		switch message.Message.(type) {
 		case *minichord.MiniChord_Registration:
-			//RegisterNode(conn, message)
-			fmt.Println(conn.RemoteAddr().String())
-			Sender("127.0.0.1:1800", "-3", "registrationResponse")
+			RegisterNode(conn, *message)
+			//Sender(message.GetRegistration().Address, "1", "registrationResponse")
 		case *minichord.MiniChord_RegistrationResponse:
 			fmt.Println("Registration response received: ", message.Message)
 
@@ -361,6 +358,13 @@ func translateTable(id, num int, table []int) {
 	Sender(registry.nodes[id], message, "nodeRegistry")
 }
 
+func listnodes() {
+	fmt.Println("List of nodes,", len(registry.nodes), "nodes in total")
+	for id, addr := range registry.nodes {
+		fmt.Println(id, addr)
+	}
+}
+
 func readUserInput() {
 	reader := bufio.NewReader(os.Stdin)
 	for {
@@ -373,7 +377,7 @@ func readUserInput() {
 		var cmdSlice = strings.Split(cmd, " ")
 		switch (cmdSlice[0]) {
 		case "list":
-			fmt.Println("list")
+			go listnodes()
 		case "setup":
 			if len(cmdSlice) != 2 {
 				cmdSlice = append(cmdSlice, "3")
