@@ -82,23 +82,22 @@ func RegisterNode(conn net.Conn, message minichord.MiniChord) error {
 }
 
 // DeregisterNode deregisters a messaging node from the system
-func DeregisterNode(conn net.Conn, id int) error {
-	for !registry.mu.TryLock() {
-		continue
-	}
+func DeregisterNode(add string, id int) error {
 	registry.mu.Lock()
 	defer registry.mu.Unlock()
+
+	fmt.Println("Deregistering node:", id, "At address: ", add, "Node address: ", registry.nodes[id])
 
 	// check if node is registered
 	var _, ok = registry.nodes[id]
 	if !ok {
-		Sender(conn.RemoteAddr().String(), "-1", "deregistrationResponse")
+		Sender(add, "-1", "deregistrationResponse")
 		return fmt.Errorf("node not registered: %d", id)
 	}
 
 	// check if node is deregistering itself
-	if registry.nodes[id] != conn.RemoteAddr().String() {
-		Sender(conn.RemoteAddr().String(), "-2", "deregistrationResponse")
+	if registry.nodes[id] != add {
+		Sender(add, "-2", "deregistrationResponse")
 		return fmt.Errorf("node not deregistering itself: %d", id)
 	}
 
@@ -106,7 +105,7 @@ func DeregisterNode(conn net.Conn, id int) error {
 	delete(registry.nodes, id)
 
 	// send response to the messaging node
-	Sender(conn.RemoteAddr().String(), "1", "deregistrationResponse")
+	Sender(add, strconv.Itoa(id), "deregistrationResponse")
 
 	return nil
 }
@@ -175,7 +174,8 @@ func readMessage(conn net.Conn) {
 			id = message.GetDeregistration().Node.Id
 			fmt.Println("Deregistration message received: ", message.Message)
 			fmt.Println("Deregistration Node ID received: ", id)
-			DeregisterNode(conn, int(id))
+			fmt.Println("Deregistration Node Address received: ", message.GetDeregistration().Node.Address)
+			DeregisterNode(message.GetDeregistration().Node.Address, int(id))
 		
 		case *minichord.MiniChord_DeregistrationResponse:
 			fmt.Println("Deregistration response received: ", message.Message)
