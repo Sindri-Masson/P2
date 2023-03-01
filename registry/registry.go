@@ -12,7 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"time"
+	//"time"
 
 	"google.golang.org/protobuf/proto"
 )
@@ -158,21 +158,19 @@ func readMessage(conn net.Conn) {
 	var id int32;
 	for {
 		buffer := make([]byte, 65535)
-		conn.SetReadDeadline(time.Now().Add(5 * time.Second))
-		length, err := conn.Read(buffer)
-		if err != nil {
-			fmt.Println("Error in reading message")
-			return
-		}
-
-		message := minichord.MiniChord{}
-		err = proto.Unmarshal(buffer[:length], &message)
+		//conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+		fmt.Println("Waiting for message...")
+		length, _ := conn.Read(buffer)
+		fmt.Println("Length of message received: ", length)
+		message := &minichord.MiniChord{}
+		err := proto.Unmarshal(buffer[:length], message)
 		if err != nil {fmt.Println("Error in unmarshalling")}
 		if message.Message == nil{return}
 		switch message.Message.(type) {
 		case *minichord.MiniChord_Registration:
-			RegisterNode(conn, message)
-		
+			//RegisterNode(conn, message)
+			fmt.Println(conn.RemoteAddr().String())
+			Sender("127.0.0.1:1800", "-3", "registrationResponse")
 		case *minichord.MiniChord_RegistrationResponse:
 			fmt.Println("Registration response received: ", message.Message)
 
@@ -413,6 +411,7 @@ func main() {
 	for {
 		fmt.Println("Waiting for new connection")
 		conn, err := ln.Accept()
+		fmt.Println(conn.RemoteAddr().String())
 		if err != nil {
 			// handle accept error
 			fmt.Println("Error in accepting")

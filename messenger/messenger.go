@@ -7,6 +7,7 @@ import (
 	"P2/minichord"
 	"google.golang.org/protobuf/proto"
 	"strconv"
+	"sync"
 	//"math/rand"
 )
 
@@ -85,17 +86,16 @@ func constructMessage(message string, typ string) *minichord.MiniChord {
 }
 
 
-func readMessage(node MessagingNode, conn net.Conn) {
+func readMessage(conn net.Conn, exitwg *sync.WaitGroup) {
 	// read message from node using minichord
 	fmt.Println("reading message from node")
 	data := make([]byte, 65535)
-	n, err := node.conn.Read(data)
-	if err != nil {
-		fmt.Println("Error reading message:", err.Error())
-	}
+	fmt.Println("making data")
+	fmt.Println("connection:", conn.RemoteAddr().String())
+	n, _ := conn.Read(data)
 	fmt.Println("received message: ", data[:n])
 	envelope := &minichord.MiniChord{}
-	err = proto.Unmarshal(data[:n], envelope)
+	err := proto.Unmarshal(data[:n], envelope)
 	if err != nil {
 		fmt.Println("Error unmarshalling message:", err.Error())
 	}
@@ -113,6 +113,7 @@ func readMessage(node MessagingNode, conn net.Conn) {
 		fmt.Println("Deregistration response received")
 		fmt.Println("Node ID: ", envelope.GetDeregistrationResponse().Result)
 		fmt.Println("Info: ", envelope.GetDeregistrationResponse().Info)
+		exitwg.Done()
 	case *minichord.MiniChord_NodeRegistry:
 		fmt.Println("Node registry received")
 		fmt.Println("Node ID: ", envelope.GetNodeRegistry().Ids)
@@ -189,23 +190,28 @@ func main() {
 	// get command line arguments go tun messenger.go <port> <otherPort>
 	address := os.Args[1]
 	var connections []MessagingNode
-	port := 1800
-	port_str := strconv.Itoa(port)
-	fmt.Println("port: ", port_str)
+	// port := "1800"
+	// fmt.Println("port: ", port_str)
 	// bind to port and start listening
-	ln, err := net.Listen("tcp", "127.0.0.1:" + port_str)
+	ln, err := net.Listen("tcp", "127.0.0.1:1800")
 	if err != nil {
 		fmt.Println("Error listening:", err.Error())
 		os.Exit(1)
 	}
+	fmt.Println("connecting to ", address)
 	conn, err := net.Dial("tcp", address)
+	fmt.Println("connected to ", conn.RemoteAddr().String())
 	if err != nil {
 		fmt.Println("Error dialing:", err.Error())
 		os.Exit(1)
 	}
-	node := MessagingNode{1, address, conn}
+
 	// close the listener when the application closes
-	readMessage(node, conn)
+	
+	//make waitgroup
+	var exitwg sync.WaitGroup
+	Sender(address, "-3" ,"registration")
+	readMessage(conn, &exitwg)
 	go func () {
 		for {
 			conn, err := ln.Accept()
