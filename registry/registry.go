@@ -21,7 +21,7 @@ import (
 const TYPE = "tcp"
 
 var registry Registry;
-var routingTables map[int][]int
+var routingTables map[int][]int = make(map[int][]int)
 
 
 // Registry represents the system registry
@@ -166,15 +166,11 @@ func readMessage(conn net.Conn) {
 		switch message.Message.(type) {
 		case *minichord.MiniChord_Registration:
 			RegisterNode(conn, *message)
-			//Sender(message.GetRegistration().Address, "1", "registrationResponse")
 		case *minichord.MiniChord_RegistrationResponse:
 			fmt.Println("Registration response received: ", message.Message)
 
 		case *minichord.MiniChord_Deregistration:
 			id = message.GetDeregistration().Node.Id
-			fmt.Println("Deregistration message received: ", message.Message)
-			fmt.Println("Deregistration Node ID received: ", id)
-			fmt.Println("Deregistration Node Address received: ", message.GetDeregistration().Node.Address)
 			DeregisterNode(message.GetDeregistration().Node.Address, int(id))
 		
 		case *minichord.MiniChord_DeregistrationResponse:
@@ -212,12 +208,12 @@ func readMessage(conn net.Conn) {
 
 func Sender(receiver string, message string, typ string) {
 	conn, err := net.Dial("tcp", receiver)
-	if err != nil {fmt.Println("Error in dialing")}
+	if err != nil {fmt.Println("Error in dialing"); return}
 	
 	conMess := constructMessage(message, typ)
 
 	data, err := proto.Marshal(conMess)
-	if err != nil {fmt.Println("Error in marshalling")}
+	if err != nil {fmt.Println("Error in marshalling"); return}
 	_, err = conn.Write(data)
 	if err != nil {fmt.Println("Error in writing")}
 }
@@ -251,14 +247,7 @@ func constructMessage(message string, typ string) *minichord.MiniChord {
 			},
 		}
 	case "deregistration":
-		fmt.Println("Message: ", message)
-		/* return &minichord.MiniChord{
-			Message: &minichord.MiniChord_Deregistration{
-				Deregistration: &minichord.Deregistration{
-					Node: message,
-				},
-			},
-		} */
+		fmt.Println("Should not be happening")
 		return nil
 	case "deregistrationResponse":
 		id, _ := strconv.Atoi(message)
@@ -278,15 +267,16 @@ func constructMessage(message string, typ string) *minichord.MiniChord {
 			},
 		}
 	case "nodeRegistry":
-		// TODO: Implement
-		msg_split := strings.Split(message, ",")
-		num := len(msg_split)
+		who, _ := strconv.Atoi(message)
+		table := routingTables[who]
+
+
+		num := len(table)
 		peers := []*minichord.Node{}
 		for i := 0; i < num; i++ {
-			var id, _ = strconv.Atoi(msg_split[i])
 			peer := &minichord.Node{
-				Id: int32(id),
-				Address: registry.nodes[id],
+				Id: int32(table[i]),
+				Address: registry.nodes[table[i]],
 			}
 			peers = append(peers, peer)
 		}
@@ -329,6 +319,8 @@ func constructMessage(message string, typ string) *minichord.MiniChord {
 	}
 }
 
+
+
 func setupOverlay(num string) {
 	fmt.Println("Setup overlay with ", num, " nodes")
 	var numInt, err = strconv.Atoi(num)
@@ -343,19 +335,9 @@ func setupOverlay(num string) {
 	// sort the ids
 	sort.Ints(ids)
 	for id := range ids {
-		routingTables[id] = GetRoutingTable(id, numInt, ids)
-		fmt.Println("routing table for ", ids[id], routingTables[id])
-		go Sender(registry.nodes[id], num, "nodeRegistry")
+		routingTables[ids[id]] = GetRoutingTable(id, numInt, ids)
+		go Sender(registry.nodes[ids[id]], strconv.Itoa(ids[id]), "nodeRegistry")
 	}
-}
-
-func translateTable(id, num int, table []int) {
-	message := ""
-	for i := range table {
-		message += strconv.Itoa(table[i]) + ","
-	}
-	message = strings.TrimRight(message, ",")
-	Sender(registry.nodes[id], message, "nodeRegistry")
 }
 
 func listnodes() {

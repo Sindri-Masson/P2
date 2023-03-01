@@ -19,6 +19,8 @@ var registry string
 var registryConn net.Conn
 var address string
 var id int32
+var routingTable map[int32]string
+var AllNodeIds []int32
 
 
 type MessagingNode struct {
@@ -28,7 +30,6 @@ type MessagingNode struct {
 }
 
 func constructMessage(message string, typ string) *minichord.MiniChord {
-	fmt.Println(message)
 	switch typ {
 	case "registration":
 		return &minichord.MiniChord{
@@ -49,7 +50,6 @@ func constructMessage(message string, typ string) *minichord.MiniChord {
 			},
 		}
 	case "deregistration":
-		fmt.Println("Message: ", message)
 		id, _ := strconv.Atoi(message)
 		return &minichord.MiniChord{
 			Message: &minichord.MiniChord_Deregistration{
@@ -103,9 +103,8 @@ func readMessage(conn net.Conn) {
 	fmt.Println("reading message from someone")
 	data := make([]byte, 65535)
 
-	fmt.Println("connection:", conn.RemoteAddr().String())
 	n, _ := conn.Read(data)
-	fmt.Println("received message: ", data[:n])
+	
 	envelope := &minichord.MiniChord{}
 	err := proto.Unmarshal(data[:n], envelope)
 	if err != nil {
@@ -114,9 +113,7 @@ func readMessage(conn net.Conn) {
 	fmt.Println("unmarshalled message: ", envelope)
 	switch envelope.Message.(type) {
 	case *minichord.MiniChord_Registration:
-		fmt.Println("Registration received")
-		fmt.Println("Node ID: ", envelope.GetRegistration().Address)
-		Sender(envelope.GetRegistration().Address, conn.LocalAddr().String()  ,"registrationResponse")
+		fmt.Println("Registration received, should not happen")
 	case *minichord.MiniChord_RegistrationResponse:
 		fmt.Println("Registration response received")
 		fmt.Println("Node ID: ", envelope.GetRegistrationResponse().Result)
@@ -128,22 +125,23 @@ func readMessage(conn net.Conn) {
 		id = envelope.GetRegistrationResponse().Result
 
 	case *minichord.MiniChord_DeregistrationResponse:
-		fmt.Println("Deregistration response received")
-		fmt.Println("result: ", envelope.GetDeregistrationResponse().Result)
-		fmt.Println("Info: ", envelope.GetDeregistrationResponse().Info)
-		if envelope.GetDeregistrationResponse().Result == id {
-			fmt.Println("Deregistered successfully")
-			os.Exit(0)
-		}
+		fmt.Println("Deregistration response received, should not happen")
 
 	case *minichord.MiniChord_NodeRegistry:
 		fmt.Println("Node registry received")
-		fmt.Println("Node ID: ", envelope.GetNodeRegistry().Ids)
-		fmt.Println("Info: ", envelope.GetNodeRegistry().Peers)
+		fmt.Println("Size of table: ", envelope.GetNodeRegistry().NR)
+		fmt.Println("Peers: ", envelope.GetNodeRegistry().Peers)
+		fmt.Println("Number of IDs in network: ", envelope.GetNodeRegistry().NoIds)
+		fmt.Println("All Ids: ", envelope.GetNodeRegistry().Ids)
+		AllNodeIds = envelope.GetNodeRegistry().Ids
+		routingTable = make(map[int32]string)
+		for i := 0; i < len(envelope.GetNodeRegistry().Peers); i++ {
+			routingTable[envelope.GetNodeRegistry().Peers[i].Id] = envelope.GetNodeRegistry().Peers[i].Address
+		}
+
 	case *minichord.MiniChord_NodeRegistryResponse:
-		fmt.Println("Node registry response received")
-		fmt.Println("Node ID: ", envelope.GetNodeRegistryResponse().Result)
-		fmt.Println("Info: ", envelope.GetNodeRegistryResponse().Info)
+		fmt.Println("Node registry response received, should not happen")
+
 	case *minichord.MiniChord_InitiateTask:
 		fmt.Println("Initiate task received")
 		fmt.Println("Packets: ", envelope.GetInitiateTask().Packets)
