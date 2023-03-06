@@ -19,9 +19,13 @@ var registry string
 var registryConn net.Conn
 var address string
 var id int32
-var routingTable map[int32]string
+var routingTable map[int32]ConnectedNode
 var AllNodeIds []int32
 
+type ConnectedNode struct {
+	Address string
+	Conn    net.Conn
+}
 
 type MessagingNode struct {
 	id      int
@@ -148,7 +152,13 @@ func constructMessage(message string, typ string) *minichord.MiniChord {
 		return nil
 	}
 }
-
+func ConnectToNode (address string) net.Conn {
+	conn, err := net.Dial("tcp", address)
+	if err != nil {
+		fmt.Println("Error connecting to node:", err.Error())
+	}
+	return conn
+}
 
 func readMessage(conn net.Conn) {
 	// read message from node using minichord
@@ -175,10 +185,8 @@ func readMessage(conn net.Conn) {
 			os.Exit(1)
 		}
 		id = envelope.GetRegistrationResponse().Result
-
 	case *minichord.MiniChord_DeregistrationResponse:
 		fmt.Println("Deregistration response received, should not happen")
-
 	case *minichord.MiniChord_NodeRegistry:
 		fmt.Println("Node registry received")
 		fmt.Println("Size of table: ", envelope.GetNodeRegistry().NR)
@@ -186,14 +194,13 @@ func readMessage(conn net.Conn) {
 		fmt.Println("Number of IDs in network: ", envelope.GetNodeRegistry().NoIds)
 		fmt.Println("All Ids: ", envelope.GetNodeRegistry().Ids)
 		AllNodeIds = envelope.GetNodeRegistry().Ids
-		routingTable = make(map[int32]string)
+		routingTable = make(map[int32]ConnectedNode)
 		for i := 0; i < len(envelope.GetNodeRegistry().Peers); i++ {
-			routingTable[envelope.GetNodeRegistry().Peers[i].Id] = envelope.GetNodeRegistry().Peers[i].Address
+			conn := ConnectToNode(envelope.GetNodeRegistry().Peers[i].Address)
+			routingTable[envelope.GetNodeRegistry().Peers[i].Id] = ConnectedNode{Address: envelope.GetNodeRegistry().Peers[i].Address, Conn: conn}
 		}
-
 	case *minichord.MiniChord_NodeRegistryResponse:
 		fmt.Println("Node registry response received, should not happen")
-
 	case *minichord.MiniChord_InitiateTask:
 		fmt.Println("Initiate task received")
 		fmt.Println("Packets: ", envelope.GetInitiateTask().Packets)
