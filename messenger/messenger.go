@@ -162,7 +162,6 @@ func ConnectToNode (address string) net.Conn {
 
 func readMessage(conn net.Conn) {
 	// read message from node using minichord
-	fmt.Println("reading message from someone")
 	data := make([]byte, 65535)
 
 	n, _ := conn.Read(data)
@@ -172,7 +171,6 @@ func readMessage(conn net.Conn) {
 	if err != nil {
 		fmt.Println("Error unmarshalling message:", err.Error())
 	}
-	fmt.Println("unmarshalled message: ", envelope)
 	switch envelope.Message.(type) {
 	case *minichord.MiniChord_Registration:
 		fmt.Println("Registration received, should not happen")
@@ -214,6 +212,7 @@ func readMessage(conn net.Conn) {
 		fmt.Println("Info: ", envelope.GetTaskFinished().Address)
 	case *minichord.MiniChord_RequestTrafficSummary:
 		fmt.Println("Request traffic summary received")
+		Sender(registry,"", "reportTrafficSummary")
 	case *minichord.MiniChord_ReportTrafficSummary:
 		fmt.Println("Report traffic summary received")
 		fmt.Println("Node ID: ", envelope.GetReportTrafficSummary().Id)
@@ -241,20 +240,20 @@ func Sender(receiver string, senderMessage string, typ string) {
 }
 
 
-func sendMessage(node MessagingNode, message string) {
-	// send message to node using minichord
-	fmt.Println("sending message to node: ", message)
-	envelope := constructMessage(message, "registration")
-	fmt.Println("envelope: ", envelope)
-	data, err := proto.Marshal(envelope)
-	fmt.Println("marshalled data: ", data)
-	new_data, err := node.conn.Write(data)
-	if err != nil {
-		fmt.Println("Error sending message:", err.Error())
-	}
-	fmt.Println("sending message: ", new_data)
+// func sendMessage(node MessagingNode, message string) {
+// 	// send message to node using minichord
+// 	fmt.Println("sending message to node: ", message)
+// 	envelope := constructMessage(message, "registration")
+// 	fmt.Println("envelope: ", envelope)
+// 	data, err := proto.Marshal(envelope)
+// 	fmt.Println("marshalled data: ", data)
+// 	new_data, err := node.conn.Write(data)
+// 	if err != nil {
+// 		fmt.Println("Error sending message:", err.Error())
+// 	}
+// 	fmt.Println("sending message: ", new_data)
 	
-}
+// }
 
 
 func handleConnection(conn net.Conn, connections *[]MessagingNode, otherPort string) {
@@ -284,16 +283,15 @@ func readUserInput() {
 			fmt.Println(err)
 			break
 		}
+		// change id to string
+		id_string := strconv.Itoa(int(id))
 		cmd = strings.Trim(cmd, "\n")
 		var cmdSlice = strings.Split(cmd, " ")
 		switch (cmdSlice[0]) {
 		case "print":
-			fmt.Println("Asked to print")
+			Sender(registry, id_string, "requestTrafficSummary")
 		case "exit":
 			fmt.Println("Deregistering from the network")
-			// change id to string
-			id_string := strconv.Itoa(int(id))
-
 			Sender(registry, id_string, "deregistration")
 		default:
 			fmt.Printf("command not understood: %s\n", cmd)
@@ -340,7 +338,6 @@ func main() {
 				fmt.Println("Error accepting: ", err.Error())
 				os.Exit(1)
 			}
-			fmt.Printf("ding")
 			go readMessage(conn)
 		}
 		

@@ -22,6 +22,8 @@ const TYPE = "tcp"
 
 var registry Registry;
 var routingTables map[int][]int = make(map[int][]int)
+var summaryMap = make(map[int32][]string)
+var counter = 0
 
 
 // Registry represents the system registry
@@ -201,7 +203,19 @@ func readMessage(conn net.Conn) {
 		
 		case *minichord.MiniChord_ReportTrafficSummary:
 			//TODO: Implement
+			counter++
 			fmt.Println("Traffic summary received: ", message.Message)
+			NodeID := message.GetReportTrafficSummary().Id
+			Sent := message.GetReportTrafficSummary().Sent
+			Received := message.GetReportTrafficSummary().Received
+			Relayed := message.GetReportTrafficSummary().Relayed
+			TotalSent := message.GetReportTrafficSummary().TotalSent
+			TotalReceived := message.GetReportTrafficSummary().TotalReceived
+
+			tempList := []string {strconv.Itoa(int(NodeID)), strconv.Itoa(int(Sent)), strconv.Itoa(int(Received)), strconv.Itoa(int(Relayed)), strconv.Itoa(int(TotalSent)), strconv.Itoa(int(TotalReceived))}
+			summaryMap[NodeID] = tempList
+			printSummary()
+
 		}
 	}
 }
@@ -216,6 +230,33 @@ func Sender(receiver string, message string, typ string) {
 	if err != nil {fmt.Println("Error in marshalling"); return}
 	_, err = conn.Write(data)
 	if err != nil {fmt.Println("Error in writing")}
+}
+
+func printSummary() {
+	sentPacketsSum := 0
+	receivedPacketsSum := 0
+	relayedPacketsSum := 0
+	totalSentPacketsSum := 0
+	totalReceivedPacketsSum := 0
+
+	for i, item := range summaryMap {
+		fmt.Println("Node ", i, ": ", item)
+		sentPacketsSumCounter, _ := strconv.Atoi(item[0])
+		receivedPacketsSumCounter, _ := strconv.Atoi(item[1])
+		relayedPacketsSumCounter, _ := strconv.Atoi(item[2])
+		totalSentPacketsSumCounter, _ := strconv.Atoi(item[3])
+		totalReceivedPacketsSumCounter, _ := strconv.Atoi(item[5])
+		sentPacketsSum += sentPacketsSumCounter
+		receivedPacketsSum += receivedPacketsSumCounter
+		relayedPacketsSum += relayedPacketsSumCounter
+		totalSentPacketsSum += totalSentPacketsSumCounter
+		totalReceivedPacketsSum += totalReceivedPacketsSumCounter
+	}
+	fmt.Println("Total Sent Packets: ", sentPacketsSum)
+	fmt.Println("Total Received Packets: ", receivedPacketsSum)
+	fmt.Println("Total Relayed Packets: ", relayedPacketsSum)
+	fmt.Println("Total Total Sent Packets: ", totalSentPacketsSum)
+	fmt.Println("Total Total Received Packets: ", totalReceivedPacketsSum)
 }
 
 func constructMessage(message string, typ string) *minichord.MiniChord {
@@ -355,8 +396,11 @@ func readUserInput() {
 			fmt.Println(err)
 			break
 		}
-		cmd = strings.Trim(cmd, "\n")
+		//cmd = strings.Trim(cmd, "\n")
 		var cmdSlice = strings.Split(cmd, " ")
+		fmt.Println("command: ",cmdSlice)
+		fmt.Println("command: ",cmdSlice[0])
+		fmt.Println("command: ",cmdSlice[1])
 		switch (cmdSlice[0]) {
 		case "list":
 			go listnodes()
