@@ -251,13 +251,11 @@ func readMessage(data []byte) {
 	case *minichord.MiniChord_NodeRegistryResponse:
 		fmt.Println("Node registry response received, should not happen")
 	case *minichord.MiniChord_InitiateTask:
-		fmt.Println("Initiate task received")
-		fmt.Println("Packets: ", envelope.GetInitiateTask().Packets)
-		// TODO: Implement
 		go sendPackets(int(envelope.GetInitiateTask().Packets))
 	case *minichord.MiniChord_NodeData:
 		fmt.Println("Node data received")
 		fmt.Println("Source: ", envelope.GetNodeData().Source)
+		
 		fmt.Println("Info: ", envelope.GetNodeData().Payload)
 
 	case *minichord.MiniChord_TaskFinished:
