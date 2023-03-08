@@ -24,9 +24,17 @@ const TYPE = "tcp"
 var registry Registry;
 var routingTables map[int][]int = make(map[int][]int)
 var readyCounter = 0
-var summaryMap = make(map[int32][]string)
+var finishedCounter = 0
+var summaryMap = make(map[int32]Summary)
 var counter = 0
 
+type Summary struct {
+	Sent uint32
+	Received uint32
+	Relayed uint32
+	SentSummary int64
+	ReceivedSummary int64
+}
 
 // Registry represents the system registry
 type Registry struct {
@@ -160,7 +168,6 @@ func readMessage(conn net.Conn) {
 	for {
 		buffer := make([]byte, 65535)
 		//conn.SetReadDeadline(time.Now().Add(5 * time.Second))
-		fmt.Println("Waiting for message...")
 		length, _ := conn.Read(buffer)
 		message := &minichord.MiniChord{}
 		err := proto.Unmarshal(buffer[:length], message)
@@ -171,7 +178,6 @@ func readMessage(conn net.Conn) {
 			RegisterNode(conn, *message)
 		case *minichord.MiniChord_RegistrationResponse:
 			fmt.Println("Registration response received: ", message.Message)
-
 		case *minichord.MiniChord_Deregistration:
 			id = message.GetDeregistration().Node.Id
 			DeregisterNode(message.GetDeregistration().Node.Address, int(id))
@@ -198,6 +204,8 @@ func readMessage(conn net.Conn) {
 		case *minichord.MiniChord_TaskFinished:
 			//TODO: Implement
 			fmt.Println("Task finished received: ", message.Message)
+			finishedCounter++
+
 		
 		case *minichord.MiniChord_NodeData:
 			//TODO: Implement
@@ -218,9 +226,10 @@ func readMessage(conn net.Conn) {
 			TotalSent := message.GetReportTrafficSummary().TotalSent
 			TotalReceived := message.GetReportTrafficSummary().TotalReceived
 
-			tempList := []string {strconv.Itoa(int(NodeID)), strconv.Itoa(int(Sent)), strconv.Itoa(int(Received)), strconv.Itoa(int(Relayed)), strconv.Itoa(int(TotalSent)), strconv.Itoa(int(TotalReceived))}
-			summaryMap[NodeID] = tempList
-			printSummary()
+			summaryMap[NodeID] = Summary{Sent, Received, Relayed, TotalSent, TotalReceived}
+			if counter == len(registry.nodes) {
+				printSummary()
+			}
 
 		}
 	}
@@ -239,31 +248,26 @@ func Sender(receiver string, message string, typ string) {
 }
 
 func printSummary() {
-	sentPacketsSum := 0
-	receivedPacketsSum := 0
-	relayedPacketsSum := 0
-	totalSentPacketsSum := 0
-	totalReceivedPacketsSum := 0
+	var sentPacketsSum int32
+	var receivedPacketsSum int32
+	var relayedPacketsSum int32
+	var totalSentPacketsSum int64
+	var totalReceivedPacketsSum int64
 	fmt.Println("----------------------------------------------------------------------------------")
-	fmt.Println(" 			        Packets 	           		Sum Values			")
+	fmt.Println(" 			        Packets 	           Sum Values			")
 	fmt.Println("----------------------------------------------------------------------------------")
-	fmt.Println("       	Sent 	Received 	Relayed 	       Sent			Received ")
+	fmt.Println("       		Sent   Received   	Relayed   	Sent   	Received ")
 	fmt.Println("----------------------------------------------------------------------------------")
-	for i, item := range summaryMap {
-		fmt.Println("Node ", strconv.Itoa(int(i)), "	", item[0], "	", item[1], "	", item[2], "	", item[3], "	", item[4], "	", item[5])
-		sentPacketsSumCounter, _ := strconv.Atoi(item[0])
-		receivedPacketsSumCounter, _ := strconv.Atoi(item[1])
-		relayedPacketsSumCounter, _ := strconv.Atoi(item[2])
-		totalSentPacketsSumCounter, _ := strconv.Atoi(item[3])
-		totalReceivedPacketsSumCounter, _ := strconv.Atoi(item[5])
-		sentPacketsSum += sentPacketsSumCounter
-		receivedPacketsSum += receivedPacketsSumCounter
-		relayedPacketsSum += relayedPacketsSumCounter
-		totalSentPacketsSum += totalSentPacketsSumCounter
-		totalReceivedPacketsSum += totalReceivedPacketsSumCounter
+	for id, item := range summaryMap {
+		fmt.Println("Node", id, "    	", item.Sent, "    	", item.Received, "   		", item.Relayed, "   	", item.SentSummary, "   	", item.ReceivedSummary)
+		sentPacketsSum += int32(item.Sent)
+		receivedPacketsSum += int32(item.Received)
+		relayedPacketsSum += int32(item.Relayed)
+		totalSentPacketsSum += item.SentSummary
+		totalReceivedPacketsSum += item.SentSummary
 	}
 	fmt.Println("----------------------------------------------------------------------------------")
-	fmt.Println("Sum:		", strconv.Itoa(sentPacketsSum), "		", strconv.Itoa(receivedPacketsSum), "		", strconv.Itoa(relayedPacketsSum), "		", strconv.Itoa(totalSentPacketsSum), "		", strconv.Itoa(totalReceivedPacketsSum))
+	fmt.Println("Sum:		", sentPacketsSum, "	", receivedPacketsSum, "		", relayedPacketsSum, "	", totalSentPacketsSum, "		", totalReceivedPacketsSum)
 }
 
 func constructMessage(message string, typ string) *minichord.MiniChord {
@@ -365,7 +369,11 @@ func constructMessage(message string, typ string) *minichord.MiniChord {
 		return nil
 	case "requestTrafficSummary":
 		// TODO: Implement
-		return nil
+		return &minichord.MiniChord{
+			Message: &minichord.MiniChord_RequestTrafficSummary{
+				RequestTrafficSummary: &minichord.RequestTrafficSummary{},
+			},
+		}
 	case "reportTrafficSummary":
 		// TODO: Implement
 		return nil
@@ -401,6 +409,7 @@ func setupOverlay(num string) {
 		time.Sleep(1 * time.Second)
 	}
 	fmt.Println("Registry is now ready to initiate tasks")
+	readyCounter = 0
 }
 
 func listnodes() {
@@ -414,6 +423,13 @@ func startTask(num string) {
 	for id, addr := range registry.nodes {
 		fmt.Println("Sending task to ", id, addr)
 		go Sender(addr, num, "initiateTask")
+	}
+}
+
+func GetTrafficSummary() {
+	for id, addr := range registry.nodes {
+		fmt.Println("Requesting traffic summary from ", id, addr)
+		go Sender(addr, "", "requestTrafficSummary")
 	}
 }
 
@@ -436,12 +452,21 @@ func readUserInput() {
 			}
 			go setupOverlay(cmdSlice[1])
 		case "route":
-			fmt.Println("route")
+			for id, table := range routingTables {
+				fmt.Println("Routing table for node ", id, ":", table)	
+			}
 		case "start":
 			if len(cmdSlice) != 2 {
 				cmdSlice = append(cmdSlice, "100")
 			}
 			go startTask(cmdSlice[1])
+			for finishedCounter < len(registry.nodes) {
+				time.Sleep(1 * time.Second)
+				continue
+			}
+			fmt.Println("All nodes are finished")
+			finishedCounter = 0
+			go GetTrafficSummary()
 		default:
 			fmt.Printf("command not understood: %s\n", cmd)
 		}

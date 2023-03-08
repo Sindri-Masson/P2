@@ -164,12 +164,29 @@ func constructMessage(message string, typ string) *minichord.MiniChord {
 				},
 			},
 		}
-	case "requestTrafficSummary":
+	
 		// TODO: Implement
 		return nil
 	case "reportTrafficSummary":
 		// TODO: Implement
-		return nil
+		message := &minichord.MiniChord{
+			Message: &minichord.MiniChord_ReportTrafficSummary{
+				ReportTrafficSummary: &minichord.TrafficSummary{
+					Id: id,
+					Sent: uint32(sendTracker),
+					Received: uint32(receiveTracker),
+					Relayed: uint32(relayTracker),
+					TotalSent: sendSummation,
+					TotalReceived: receiveSummation,
+				},
+			},
+		}
+		sendTracker = 0
+		receiveTracker = 0
+		relayTracker = 0
+		sendSummation = 0
+		receiveSummation = 0
+		return message
 	default:
 		return nil
 	}
@@ -199,6 +216,7 @@ func sendPackets (number int) {
 		sendSummation += int64(randomPayload)
 		sendTracker++
 	}
+	Sender(registry, strconv.Itoa(int(id)) + "," + address, "taskFinished")
 }
 
 func remove(slice []int32, s int32) []int32 {
@@ -274,15 +292,13 @@ func readMessage(data []byte) {
 			Sender(routingTable[closestNode].Address, message, "nodeData")
 			relayTracker++
 		}
-
 	case *minichord.MiniChord_TaskFinished:
 		fmt.Println("Task finished received")
 		fmt.Println("Node ID: ", envelope.GetTaskFinished().Id)
 		fmt.Println("Info: ", envelope.GetTaskFinished().Address)
 	case *minichord.MiniChord_RequestTrafficSummary:
 		fmt.Println("Request traffic summary received")
-		Sender(registry,"", "reportTrafficSummary")
-		// TODO: Implement
+		Sender(registry, "", "reportTrafficSummary")
 	case *minichord.MiniChord_ReportTrafficSummary:
 		fmt.Println("Report traffic summary received")
 		fmt.Println("Node ID: ", envelope.GetReportTrafficSummary().Id)
@@ -308,23 +324,6 @@ func Sender(receiver string, senderMessage string, typ string) {
 	_, err = conn.Write(data)
 	if err != nil {fmt.Println("Error Write", err)}
 }
-
-
-// func sendMessage(node MessagingNode, message string) {
-// 	// send message to node using minichord
-// 	fmt.Println("sending message to node: ", message)
-// 	envelope := constructMessage(message, "registration")
-// 	fmt.Println("envelope: ", envelope)
-// 	data, err := proto.Marshal(envelope)
-// 	fmt.Println("marshalled data: ", data)
-// 	new_data, err := node.conn.Write(data)
-// 	if err != nil {
-// 		fmt.Println("Error sending message:", err.Error())
-// 	}
-// 	fmt.Println("sending message: ", new_data)
-	
-// }
-
 
 func handleConnection(conn net.Conn) {
 	defer conn.Close()
