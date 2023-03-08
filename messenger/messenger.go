@@ -4,8 +4,10 @@ import (
 	"P2/minichord"
 	"bufio"
 	"fmt"
+	"io"
 	"net"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -16,21 +18,47 @@ import (
 )
 
 var registry string
-var registryConn net.Conn
 var address string
 var id int32
 var routingTable map[int32]ConnectedNode
+var ConnectedIds []int
 var AllNodeIds []int32
 
 type ConnectedNode struct {
 	Address string
-	Conn    net.Conn
+	Conn   net.Conn
 }
 
-type MessagingNode struct {
-	id      int
-	address string
-	conn    net.Conn
+func findClosest(dest int32) int32 {
+	// Find closest node
+	var _, ok = routingTable[dest]
+	if ok {
+		return dest
+	}
+	i := 0
+	for i < len(AllNodeIds) {
+		if AllNodeIds[i] == dest {
+			break
+		}
+		i++
+	}
+	index := i
+	for i := index; i > 0; i-- {
+		_, ok = routingTable[AllNodeIds[i]]
+		if ok {
+        	return AllNodeIds[i]
+		}
+    }
+	for i := len(AllNodeIds) - 1; i >= index; i-- {
+		_, ok = routingTable[AllNodeIds[i]]
+		if ok {
+        	return AllNodeIds[i]
+		}
+    }
+
+		
+
+	return -1
 }
 
 func constructMessage(message string, typ string) *minichord.MiniChord {
@@ -75,11 +103,7 @@ func constructMessage(message string, typ string) *minichord.MiniChord {
 				},
 			},
 		}
-	case "nodeRegistry":
-		// TODO: Implement
-		return nil
 	case "nodeRegistryResponse":
-		// TODO: Implement
 		if message == "1" {
 			return &minichord.MiniChord{
 				Message: &minichord.MiniChord_NodeRegistryResponse{
@@ -94,40 +118,31 @@ func constructMessage(message string, typ string) *minichord.MiniChord {
 				Message: &minichord.MiniChord_NodeRegistryResponse{
 					NodeRegistryResponse: &minichord.NodeRegistryResponse{
 						Result: 0,
-						Info: "Node registry not received",
+						Info: "Node registry failed",
 					},
 				},
 			}
 		}
-	case "initiateTask":
-		// TODO: Implement
-		return nil
 	case "nodeData":
-		// TODO: Implement
-		trace := make([]int32, 0, 127)
 		data := strings.Split(message, ",")
 		dest, _ := strconv.Atoi(data[0])
-		int_dest := int32(dest)
 		source, _ := strconv.Atoi(data[1])
-		int_source := int32(source)
 		payload, _ := strconv.Atoi(data[2])
 		hopCount, _ := strconv.Atoi(data[3])
-		int_hopCount := uint32(hopCount)
 
-		trace = StoI(data[4:])
+		trace := StoI(data[4:])
 
 		return &minichord.MiniChord{
 			Message: &minichord.MiniChord_NodeData{
 				NodeData: &minichord.NodeData{
-					Destination: int_dest,
-					Source: int_source,
+					Destination: int32(dest),
+					Source: int32(source),
 					Payload: int32(payload),
-					Hops: int_hopCount,
+					Hops: uint32(hopCount),
 					Trace: trace,
 				},
 			},
 		}
-		return nil
 	case "taskFinished":
 		// TODO: Implement
 		new_message := strings.Split(message, ",")
@@ -160,14 +175,36 @@ func ConnectToNode (address string) net.Conn {
 	return conn
 }
 
-func readMessage(conn net.Conn) {
-	// read message from node using minichord
-	data := make([]byte, 65535)
+func sendPackets (number int) {
+	for i := 0; i < number; i++ {
+		// Get random node
+		rand.Seed(time.Now().UnixNano())
+		receiver := AllNodeIds[rand.Intn(len(AllNodeIds))]
+		// Get random payload
+		randomPayload := rand.Intn(4294967295) - 2147483648
+		// Send message
+		message := strconv.Itoa(int(receiver)) + "," + strconv.Itoa(int(id)) + "," + strconv.Itoa(randomPayload) + "," + strconv.Itoa(0) + "," + strconv.Itoa(int(id))
+		// find closest node in routing table
+		closestNode := findClosest(int32(receiver))
+		fmt.Println("My table is ", ConnectedIds, "Closest node to ", receiver, " is ", closestNode)
+		
+		Sender(routingTable[closestNode].Address, message, "nodeData")
+	}
+}
 
-	n, _ := conn.Read(data)
-	
+func remove(slice []int32, s int32) []int32 {
+	for i, v := range slice {
+		if v == s {
+			return append(slice[:i], slice[i+1:]...)
+		}
+	}
+	return slice
+}
+
+func readMessage(data []byte) {
+	// read message from node using minichord
 	envelope := &minichord.MiniChord{}
-	err := proto.Unmarshal(data[:n], envelope)
+	err := proto.Unmarshal(data, envelope)
 	if err != nil {
 		fmt.Println("Error unmarshalling message:", err.Error())
 	}
@@ -187,25 +224,40 @@ func readMessage(conn net.Conn) {
 		fmt.Println("Deregistration response received, should not happen")
 	case *minichord.MiniChord_NodeRegistry:
 		fmt.Println("Node registry received")
-		fmt.Println("Size of table: ", envelope.GetNodeRegistry().NR)
-		fmt.Println("Peers: ", envelope.GetNodeRegistry().Peers)
-		fmt.Println("Number of IDs in network: ", envelope.GetNodeRegistry().NoIds)
-		fmt.Println("All Ids: ", envelope.GetNodeRegistry().Ids)
 		AllNodeIds = envelope.GetNodeRegistry().Ids
+		AllNodeIds = remove(AllNodeIds, id)
+		sort.Slice(AllNodeIds, func(i, j int) bool { return AllNodeIds[i] < AllNodeIds[j] })
 		routingTable = make(map[int32]ConnectedNode)
+		failed := false
 		for i := 0; i < len(envelope.GetNodeRegistry().Peers); i++ {
-			conn := ConnectToNode(envelope.GetNodeRegistry().Peers[i].Address)
+			conn, err := net.Dial("tcp", envelope.GetNodeRegistry().Peers[i].Address)
+			if err != nil {
+				fmt.Println("Error connecting to node:", err.Error())
+				failed = true
+				break
+			}
 			routingTable[envelope.GetNodeRegistry().Peers[i].Id] = ConnectedNode{Address: envelope.GetNodeRegistry().Peers[i].Address, Conn: conn}
+			ConnectedIds = append(ConnectedIds, int(envelope.GetNodeRegistry().Peers[i].Id))
+		}
+		if failed {
+			fmt.Println("Error connecting to nodes, exiting")
+			go Sender(registry, "2", "nodeRegistryResponse")
+			ConnectedIds = nil
+		} else {
+			// Sort the connected ids
+			sort.Ints(ConnectedIds)
+			go Sender(registry, "1", "nodeRegistryResponse")
 		}
 	case *minichord.MiniChord_NodeRegistryResponse:
 		fmt.Println("Node registry response received, should not happen")
 	case *minichord.MiniChord_InitiateTask:
-		fmt.Println("Initiate task received")
-		fmt.Println("Packets: ", envelope.GetInitiateTask().Packets)
+		go sendPackets(int(envelope.GetInitiateTask().Packets))
 	case *minichord.MiniChord_NodeData:
 		fmt.Println("Node data received")
 		fmt.Println("Source: ", envelope.GetNodeData().Source)
+		
 		fmt.Println("Info: ", envelope.GetNodeData().Payload)
+
 	case *minichord.MiniChord_TaskFinished:
 		fmt.Println("Task finished received")
 		fmt.Println("Node ID: ", envelope.GetTaskFinished().Id)
@@ -213,6 +265,7 @@ func readMessage(conn net.Conn) {
 	case *minichord.MiniChord_RequestTrafficSummary:
 		fmt.Println("Request traffic summary received")
 		Sender(registry,"", "reportTrafficSummary")
+		// TODO: Implement
 	case *minichord.MiniChord_ReportTrafficSummary:
 		fmt.Println("Report traffic summary received")
 		fmt.Println("Node ID: ", envelope.GetReportTrafficSummary().Id)
@@ -256,11 +309,28 @@ func Sender(receiver string, senderMessage string, typ string) {
 // }
 
 
-func handleConnection(conn net.Conn, connections *[]MessagingNode, otherPort string) {
-	// add connection to list of connections
-	// create a new MessagingNode
-	node := MessagingNode{len(*connections)+1, conn.RemoteAddr().String(), conn}
-	*connections = append(*connections, node)
+func handleConnection(conn net.Conn) {
+	defer conn.Close()
+
+    for {
+        // Create a buffer to read into
+        buf := make([]byte, 1024)
+
+        // Read from the connection into the buffer
+        n, err := conn.Read(buf)
+        if err != nil {
+            if err == io.EOF {
+                // Connection closed by remote host
+                return
+            }
+            continue
+        }
+
+        // Process the data that was read
+        data := buf[:n]
+		readMessage(data)
+	}
+	
 }
 
 func StoI(s []string) []int32 {
@@ -338,7 +408,7 @@ func main() {
 				fmt.Println("Error accepting: ", err.Error())
 				os.Exit(1)
 			}
-			go readMessage(conn)
+			go handleConnection(conn)
 		}
 		
 	}()
