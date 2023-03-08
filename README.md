@@ -15,9 +15,12 @@ MESSENGER GOALS
  
  
  Running the project
-  registry: go run registry.go [port]
+ 
+  registry: 
+   go run registry.go [port]
   
-  messenger: go run messenger.go [address]:[port]
+  messenger: 
+   go run messenger.go [address]:[port]
   
   To run multiple messengers at the same time, 
   we have included a bash script, which runs 10 messengers at the same time.
