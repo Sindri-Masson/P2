@@ -244,9 +244,13 @@ func printSummary() {
 	relayedPacketsSum := 0
 	totalSentPacketsSum := 0
 	totalReceivedPacketsSum := 0
-
+	fmt.Println("----------------------------------------------------------------------------------")
+	fmt.Println(" 			        Packets 	           		Sum Values			")
+	fmt.Println("----------------------------------------------------------------------------------")
+	fmt.Println("       	Sent 	Received 	Relayed 	       Sent			Received ")
+	fmt.Println("----------------------------------------------------------------------------------")
 	for i, item := range summaryMap {
-		fmt.Println("Node ", i, ": ", item)
+		fmt.Println("Node ", strconv.Itoa(int(i)), "	", item[0], "	", item[1], "	", item[2], "	", item[3], "	", item[4], "	", item[5])
 		sentPacketsSumCounter, _ := strconv.Atoi(item[0])
 		receivedPacketsSumCounter, _ := strconv.Atoi(item[1])
 		relayedPacketsSumCounter, _ := strconv.Atoi(item[2])
@@ -258,11 +262,8 @@ func printSummary() {
 		totalSentPacketsSum += totalSentPacketsSumCounter
 		totalReceivedPacketsSum += totalReceivedPacketsSumCounter
 	}
-	fmt.Println("Total Sent Packets: ", sentPacketsSum)
-	fmt.Println("Total Received Packets: ", receivedPacketsSum)
-	fmt.Println("Total Relayed Packets: ", relayedPacketsSum)
-	fmt.Println("Total Total Sent Packets: ", totalSentPacketsSum)
-	fmt.Println("Total Total Received Packets: ", totalReceivedPacketsSum)
+	fmt.Println("----------------------------------------------------------------------------------")
+	fmt.Println("Sum:		", strconv.Itoa(sentPacketsSum), "		", strconv.Itoa(receivedPacketsSum), "		", strconv.Itoa(relayedPacketsSum), "		", strconv.Itoa(totalSentPacketsSum), "		", strconv.Itoa(totalReceivedPacketsSum))
 }
 
 func constructMessage(message string, typ string) *minichord.MiniChord {
