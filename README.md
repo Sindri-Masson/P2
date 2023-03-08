@@ -24,8 +24,10 @@ MESSENGER GOALS
   
   To run multiple messengers at the same time, 
   we have included a bash script, which runs 10 messengers at the same time.
-  
-  bash script: ./build.sh
+  Like the messenger, the bash script is run with the following script:
+    
+    bash script: 
+        ./build.sh 
   
  
  
