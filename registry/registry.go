@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	//"time"
 
@@ -22,6 +23,7 @@ const TYPE = "tcp"
 
 var registry Registry;
 var routingTables map[int][]int = make(map[int][]int)
+var readyCounter = 0
 var summaryMap = make(map[int32][]string)
 var counter = 0
 
@@ -160,7 +162,6 @@ func readMessage(conn net.Conn) {
 		//conn.SetReadDeadline(time.Now().Add(5 * time.Second))
 		fmt.Println("Waiting for message...")
 		length, _ := conn.Read(buffer)
-		fmt.Println("Length of message received: ", length)
 		message := &minichord.MiniChord{}
 		err := proto.Unmarshal(buffer[:length], message)
 		if err != nil {fmt.Println("Error in unmarshalling")}
@@ -183,8 +184,13 @@ func readMessage(conn net.Conn) {
 			fmt.Println("Node registry received: ", message.Message)
 		
 		case *minichord.MiniChord_NodeRegistryResponse:
-			fmt.Println("Node registry response received: ", message.Message)
-		
+			if message.GetNodeRegistryResponse().Result == 1 {
+				fmt.Println("Node registry response received: ", message.Message)
+				readyCounter++
+			} else {
+				fmt.Println("Node registry response received: ", message.Message)
+				readyCounter = -100
+			}
 		case *minichord.MiniChord_InitiateTask:
 			//TODO: Implement
 			fmt.Println("Task initiate received: ", message.Message)
@@ -342,7 +348,14 @@ func constructMessage(message string, typ string) *minichord.MiniChord {
 		return nil
 	case "initiateTask":
 		// TODO: Implement
-		return nil
+		num, _ := strconv.Atoi(message)
+		return &minichord.MiniChord{
+			Message: &minichord.MiniChord_InitiateTask{
+				InitiateTask: &minichord.InitiateTask{
+					Packets: uint32(num),
+				},
+			},
+		}
 	case "nodeData":
 		// TODO: Implement
 		return nil
@@ -379,12 +392,27 @@ func setupOverlay(num string) {
 		routingTables[ids[id]] = GetRoutingTable(id, numInt, ids)
 		go Sender(registry.nodes[ids[id]], strconv.Itoa(ids[id]), "nodeRegistry")
 	}
+	for readyCounter < len(registry.nodes) {
+		if readyCounter < 0 {
+			fmt.Println("Setup failed")
+			return
+		}
+		time.Sleep(1 * time.Second)
+	}
+	fmt.Println("Registry is now ready to initiate tasks")
 }
 
 func listnodes() {
 	fmt.Println("List of nodes,", len(registry.nodes), "nodes in total")
 	for id, addr := range registry.nodes {
 		fmt.Println(id, addr)
+	}
+}
+
+func startTask(num string) {
+	for id, addr := range registry.nodes {
+		fmt.Println("Sending task to ", id, addr)
+		go Sender(addr, num, "initiateTask")
 	}
 }
 
@@ -396,11 +424,8 @@ func readUserInput() {
 			fmt.Println(err)
 			break
 		}
-		//cmd = strings.Trim(cmd, "\n")
+		cmd = strings.Trim(cmd, "\n")
 		var cmdSlice = strings.Split(cmd, " ")
-		fmt.Println("command: ",cmdSlice)
-		fmt.Println("command: ",cmdSlice[0])
-		fmt.Println("command: ",cmdSlice[1])
 		switch (cmdSlice[0]) {
 		case "list":
 			go listnodes()
@@ -412,7 +437,10 @@ func readUserInput() {
 		case "route":
 			fmt.Println("route")
 		case "start":
-			fmt.Println("start")
+			if len(cmdSlice) != 2 {
+				cmdSlice = append(cmdSlice, "100")
+			}
+			go startTask(cmdSlice[1])
 		default:
 			fmt.Printf("command not understood: %s\n", cmd)
 		}
@@ -429,12 +457,12 @@ func main() {
 	port := os.Args[1]
 	ln, err := net.Listen("tcp", "localhost:" + port)
 	//print
-	fmt.Println("Registry is running on port: ", port)
 	if err != nil {
 		// handle listen error
-		fmt.Println("Error listening")
+		fmt.Println("Error listening", err)
 		os.Exit(1)
 	}
+	fmt.Println("Registry is running on port: ", port)
 	defer ln.Close()
 
 	// accept incoming connections and register messaging nodes
