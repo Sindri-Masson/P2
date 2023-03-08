@@ -24,6 +24,13 @@ var routingTable map[int32]ConnectedNode
 var ConnectedIds []int
 var AllNodeIds []int32
 
+// trackers
+var receiveTracker int
+var sendTracker int
+var relayTracker int
+var sendSummation int64
+var receiveSummation int64
+
 type ConnectedNode struct {
 	Address string
 	Conn   net.Conn
@@ -189,6 +196,8 @@ func sendPackets (number int) {
 		fmt.Println("My table is ", ConnectedIds, "Closest node to ", receiver, " is ", closestNode)
 		
 		Sender(routingTable[closestNode].Address, message, "nodeData")
+		sendSummation += int64(randomPayload)
+		sendTracker++
 	}
 }
 
@@ -253,10 +262,18 @@ func readMessage(data []byte) {
 	case *minichord.MiniChord_InitiateTask:
 		go sendPackets(int(envelope.GetInitiateTask().Packets))
 	case *minichord.MiniChord_NodeData:
-		fmt.Println("Node data received")
-		fmt.Println("Source: ", envelope.GetNodeData().Source)
-		
-		fmt.Println("Info: ", envelope.GetNodeData().Payload)
+		if envelope.GetNodeData().Destination == id {
+			fmt.Println("Packet arrived at destination")
+			receiveSummation += int64(envelope.GetNodeData().Payload)
+			receiveTracker++
+		} else {
+			// find closest node in routing table
+			closestNode := findClosest(envelope.GetNodeData().Destination)
+			// Send message
+			message := strconv.Itoa(int(envelope.GetNodeData().Destination)) + "," + strconv.Itoa(int(envelope.GetNodeData().Source)) + "," + strconv.Itoa(int(envelope.GetNodeData().Payload)) + "," + strconv.Itoa(int(envelope.GetNodeData().Hops)) + "," + strconv.Itoa(int(id))
+			Sender(routingTable[closestNode].Address, message, "nodeData")
+			relayTracker++
+		}
 
 	case *minichord.MiniChord_TaskFinished:
 		fmt.Println("Task finished received")
